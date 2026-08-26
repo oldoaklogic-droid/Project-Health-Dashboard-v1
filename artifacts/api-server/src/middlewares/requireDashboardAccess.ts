@@ -3,22 +3,10 @@ import { clerkClient, getAuth } from "@clerk/express";
 
 export type DashboardRole = "viewer" | "editor";
 
-function emailList(name: "DASHBOARD_VIEWER_EMAILS" | "DASHBOARD_EDITOR_EMAILS"): Set<string> {
-  return new Set(
-    (process.env[name] ?? "")
-      .split(",")
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean),
-  );
-}
-
 async function approvedRole(userId: string): Promise<DashboardRole | undefined> {
   const user = await clerkClient.users.getUser(userId);
-  const email = user.primaryEmailAddress?.emailAddress?.trim().toLowerCase();
-  if (!email) return undefined;
-  if (emailList("DASHBOARD_EDITOR_EMAILS").has(email)) return "editor";
-  if (emailList("DASHBOARD_VIEWER_EMAILS").has(email)) return "viewer";
-  return undefined;
+  const role = user.publicMetadata.dashboardRole;
+  return role === "viewer" || role === "editor" ? role : undefined;
 }
 
 export async function requireDashboardAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
