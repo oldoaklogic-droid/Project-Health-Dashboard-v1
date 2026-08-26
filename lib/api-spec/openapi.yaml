@@ -1,0 +1,178 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: projects
+    description: Project health dashboard data
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [projects]
+      summary: Get the project health dashboard
+      responses:
+        "200":
+          description: Dashboard summary and project records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dashboard"
+  /projects/{code}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      summary: Get a project by project code
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Project record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          description: Project not found
+    patch:
+      operationId: updateProject
+      tags: [projects]
+      summary: Update the PM-controlled fields for a project
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectUpdate"
+      responses:
+        "200":
+          description: Updated project record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          description: Invalid update
+        "404":
+          description: Project not found
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    Project:
+      type: object
+      required: [code, name, client, pm, priority, overall, confidence, contractValue, contractValueVisible, budgetExists, pctAvail, pctComplete, dueAvail, dueDate, recent90, laborWip, expenseWip, openAr, exposure, deliverable, etcHours, scopeNote, blocker, nextAction, owner, actionDue, lastContact, pmUpdate]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        client: { type: string }
+        pm: { type: string }
+        priority: { type: string }
+        overall: { type: string }
+        confidence: { type: string }
+        contractValue: { type: number }
+        contractValueVisible: { type: boolean }
+        budgetExists: { type: boolean }
+        pctAvail: { type: boolean }
+        pctComplete: { type: number }
+        dueAvail: { type: boolean }
+        dueDate: { type: ["string", "null"] }
+        recent90: { type: number }
+        laborWip: { type: number }
+        expenseWip: { type: number }
+        openAr: { type: number }
+        exposure: { type: number }
+        deliverable: { type: string }
+        etcHours: { type: ["number", "null"] }
+        scopeNote: { type: string }
+        blocker: { type: string }
+        nextAction: { type: string }
+        owner: { type: string }
+        actionDue: { type: ["string", "null"] }
+        lastContact: { type: ["string", "null"] }
+        pmUpdate: { type: boolean }
+    ProjectUpdate:
+      type: object
+      properties:
+        deliverable: { type: string }
+        etcHours: { type: ["number", "null"] }
+        scopeNote: { type: string }
+        blocker: { type: string }
+        nextAction: { type: string }
+        owner: { type: string }
+        actionDue: { type: ["string", "null"] }
+        lastContact: { type: ["string", "null"] }
+        pmUpdate: { type: boolean }
+    Coverage:
+      type: object
+      required: [label, count, pct, note]
+      properties:
+        label: { type: string }
+        count: { type: number }
+        pct: { type: number }
+        note: { type: string }
+    DashboardSummary:
+      type: object
+      required: [activeRoots, namedPm, financialExposure, overall, confidence, coverage, byPm]
+      properties:
+        activeRoots: { type: number }
+        namedPm: { type: number }
+        financialExposure: { type: number }
+        overall:
+          type: object
+          additionalProperties: { type: number }
+        confidence:
+          type: object
+          additionalProperties: { type: number }
+        coverage:
+          type: array
+          items: { $ref: "#/components/schemas/Coverage" }
+        byPm:
+          type: object
+          additionalProperties: { type: number }
+    Dashboard:
+      type: object
+      required: [extractDate, overlayUpdated, summary, projects]
+      properties:
+        extractDate: { type: string }
+        overlayUpdated: { type: string }
+        summary: { $ref: "#/components/schemas/DashboardSummary" }
+        projects:
+          type: array
+          items: { $ref: "#/components/schemas/Project" }
+

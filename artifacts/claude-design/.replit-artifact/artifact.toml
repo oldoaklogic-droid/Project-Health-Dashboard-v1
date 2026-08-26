@@ -1,0 +1,28 @@
+kind = "web"
+version = "1.0.0"
+title = "Claude design"
+previewPath = "/"
+id = "artifacts/claude-design"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+ensurePreviewReachable = "/"
+localPort = 24722
+
+[services.development]
+run = "pnpm --filter @workspace/claude-design run dev"
+
+[services.production]
+serve = "static"
+build = [ "pnpm", "--filter", "@workspace/claude-design", "run", "build" ]
+publicDir = "artifacts/claude-design/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24722"
+BASE_PATH = "/"
