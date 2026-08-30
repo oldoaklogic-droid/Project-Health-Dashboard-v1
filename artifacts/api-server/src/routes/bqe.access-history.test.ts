@@ -123,8 +123,10 @@ mock.module("@workspace/db", {
   namedExports: {
     bqeConnectionTable: {},
     bqeFingerprintKeysTable: {},
+    bqePhase2DiagnosticsTable: {},
+    bqePhase2MappingSourceTable: {},
     bqePhase2ReconciliationRunsTable: {},
-    bqeProjectTypeMappingsTable: {},
+    bqeProjectSourceMappingsTable: {},
     bqePullRunsTable: {},
     dashboardAccessChangesTable: accessChangesTable,
     db,

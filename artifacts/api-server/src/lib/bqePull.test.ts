@@ -131,10 +131,10 @@ describe("BQE pull fixtures", () => {
   });
 
   it("merges HTTP 207 field batches by record id", async () => {
-    const requests: URL[] = [];
-    globalThis.fetch = async (input) => {
+    const requests: Array<{ url: URL; method: string | undefined }> = [];
+    globalThis.fetch = async (input, init) => {
       const url = new URL(input.toString());
-      requests.push(url);
+      requests.push({ url, method: init?.method });
       const fields = url.searchParams.get("fields")?.split(",") ?? [];
       if (fields.length > 4) {
         return jsonResponse(207, { error: "field batch too large" });
@@ -155,7 +155,24 @@ describe("BQE pull fixtures", () => {
       },
     ]);
     assert.ok(requests.length > 5);
-    assert.equal(requests[0].searchParams.get("page"), "1,100");
+    assert.equal(requests[0]?.url.searchParams.get("page"), "1,100");
+    assert.ok(requests.every((request) => request.method === "GET"));
+  });
+
+  it("uses the read-only customfieldvalue endpoint and requests source evidence fields", async () => {
+    let request: { url: URL; method: string | undefined } | null = null;
+    globalThis.fetch = async (input, init) => {
+      request = { url: new URL(input.toString()), method: init?.method };
+      return jsonResponse(200, { data: [] });
+    };
+    await fetchBqeRecordsForObject(connection, "customfieldvalue");
+    assert.ok(request);
+    const captured = request as { url: URL; method: string | undefined };
+    assert.equal(captured.method, "GET");
+    const fields = captured.url.searchParams.get("fields")?.split(",") ?? [];
+    for (const field of ["id", "customFieldId", "entityId", "entityType", "value", "description", "label", "type"]) {
+      assert.ok(fields.includes(field));
+    }
   });
 
   it("stops when pagination repeats the same non-empty page", async () => {

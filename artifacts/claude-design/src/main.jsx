@@ -331,7 +331,7 @@ function ManagerView() {
   </div>;
 }
 
-function MappingRow({ row, fingerprints, onSave }) {
+function MappingRow({ row, fingerprints, onSave, disabled }) {
   const [key, setKey] = useState(row.fingerprintKey || "");
   const [active, setActive] = useState(row.active);
   const [saving, setSaving] = useState(false);
@@ -345,16 +345,16 @@ function MappingRow({ row, fingerprints, onSave }) {
 
   const handleSave = async () => {
     setSaving(true);
-    await onSave(row.projectType, key, active);
+    await onSave(row.sourceValue, key, active);
     setSaving(false);
   };
 
   return (
-    <tr>
-      <td><strong>{row.projectType}</strong></td>
+    <tr className={disabled ? "disabled-row" : ""}>
+      <td className="break-word" style={{ maxWidth: "200px" }}><strong>{row.sourceValue || "(Empty)"}</strong></td>
       <td>{row.hours > 0 ? `${metricValue(row.hours)} (${metricValue(row.count)})` : "—"}</td>
       <td>
-        <select value={key} onChange={e => setKey(e.target.value)} disabled={saving} className="mappings-select" aria-label={`Mapping for ${row.projectType}`}>
+        <select value={key} onChange={e => setKey(e.target.value)} disabled={saving || disabled} className="mappings-select" aria-label={`Mapping for ${row.sourceValue}`}>
           <option value="">Select mapping…</option>
           {fingerprints.map(f => (
             <option key={f.key} value={f.key}>{f.key} {f.active ? "" : "(Inactive)"}</option>
@@ -362,10 +362,10 @@ function MappingRow({ row, fingerprints, onSave }) {
         </select>
       </td>
       <td>
-        <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} disabled={saving} aria-label={`Active status for ${row.projectType}`} />
+        <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} disabled={saving || disabled} aria-label={`Active status for ${row.sourceValue}`} />
       </td>
       <td>
-        {isDirty && (
+        {isDirty && !disabled && (
           <button className="secondary" style={{padding: "6px 12px"}} onClick={handleSave} disabled={saving || !key}>
             {saving ? "…" : "Save"}
           </button>
@@ -383,6 +383,10 @@ function Phase2Admin() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
+  const [localSourceKind, setLocalSourceKind] = useState("");
+  const [localSourceFieldKey, setLocalSourceFieldKey] = useState("");
+  const [savingSource, setSavingSource] = useState(false);
+
   const loadData = async () => {
     try {
       const [recRes, mapRes] = await Promise.all([
@@ -391,8 +395,15 @@ function Phase2Admin() {
       ]);
       if (!recRes.ok || !mapRes.ok) throw new Error("Failed to load Phase 2 data");
 
-      setData(await recRes.json());
-      setMappingsData(await mapRes.json());
+      const recData = await recRes.json();
+      const mapData = await mapRes.json();
+
+      setData(recData);
+      setMappingsData(mapData);
+
+      setLocalSourceKind(mapData.source?.sourceKind || "");
+      setLocalSourceFieldKey(mapData.source?.sourceFieldKey || "");
+
       setError("");
     } catch (err) {
       setError(err.message);
@@ -423,15 +434,45 @@ function Phase2Admin() {
     }
   };
 
-  const updateMapping = async (bqeProjectType, fingerprintKey, active) => {
+  const handleSaveMappingSource = async () => {
+    setSavingSource(true);
+    setError("");
+    setMessage("");
     try {
-       const res = await fetch(`/api/admin/phase2/mappings/${encodeURIComponent(bqeProjectType)}`, {
+      const res = await fetch("/api/admin/phase2/mapping-source", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          sourceKind: localSourceKind === "" ? null : localSourceKind,
+          sourceFieldKey: localSourceKind === "custom_field" ? localSourceFieldKey : null
+        })
+      });
+      if (!res.ok) {
+         const err = await res.json().catch(() => ({}));
+         throw new Error(err.error || "Failed to save mapping source");
+      }
+      setMessage("Mapping source saved successfully.");
+      await loadData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingSource(false);
+    }
+  };
+
+  const updateMapping = async (sourceValue, fingerprintKey, active) => {
+    try {
+       const res = await fetch(`/api/admin/phase2/mappings/${encodeURIComponent(sourceValue)}`, {
          method: "PUT",
          headers: { "Content-Type": "application/json" },
          credentials: "include",
          body: JSON.stringify({ fingerprintKey, active })
        });
-       if (!res.ok) throw new Error("Failed to update mapping");
+       if (!res.ok) {
+         const err = await res.json().catch(() => ({}));
+         throw new Error(err.error || "Failed to update mapping");
+       }
        await loadData();
        setMessage("Mapping saved successfully.");
     } catch (err) {
@@ -446,25 +487,30 @@ function Phase2Admin() {
   const mappings = mappingsData?.mappings || [];
   const fingerprints = mappingsData?.fingerprints || [];
 
-  const allProjectTypes = new Set();
-  mappings.forEach(m => allProjectTypes.add(m.bqeProjectType));
-  (latest?.unmappedTypes || []).forEach(u => allProjectTypes.add(u.projectType));
+  const allSourceValues = new Set();
+  mappings.forEach(m => allSourceValues.add(m.sourceValue));
+  (latest?.unmappedValues || []).forEach(u => allSourceValues.add(u.sourceValue));
 
-  const combinedMappings = Array.from(allProjectTypes).map(type => {
-    const mapping = mappings.find(m => m.bqeProjectType === type);
-    const unmappedData = latest?.unmappedTypes?.find(u => u.projectType === type);
+  const combinedMappings = Array.from(allSourceValues).map(val => {
+    const mapping = mappings.find(m => m.sourceValue === val);
+    const unmappedData = latest?.unmappedValues?.find(u => u.sourceValue === val);
     return {
-      projectType: type,
+      sourceValue: val,
       fingerprintKey: mapping?.fingerprintKey || "",
       active: mapping ? mapping.active : true,
       hours: unmappedData?.hours || 0,
-      count: unmappedData?.projectCount || 0,
+      count: unmappedData?.count ?? unmappedData?.projectCount ?? 0,
       isMapped: !!mapping,
     };
   }).sort((a, b) => {
     if (a.isMapped !== b.isMapped) return a.isMapped ? 1 : -1;
     return b.hours - a.hours;
   });
+
+  const isSourceDirty = localSourceKind !== (mappingsData?.source?.sourceKind || "") ||
+                        (localSourceKind === "custom_field" && localSourceFieldKey !== (mappingsData?.source?.sourceFieldKey || ""));
+
+  const editorDisabled = (!mappingsData?.source?.sourceKind || mappingsData?.source?.sourceKind === "name_pattern");
 
   return (
     <div className="phase2-admin" style={{ marginTop: "48px", display: "flex", flexDirection: "column", gap: "22px" }}>
@@ -585,7 +631,7 @@ function Phase2Admin() {
             <table>
               <thead>
                 <tr>
-                  <th>Project Type</th>
+                  <th>Mapping source value</th>
                   <th>Fingerprint Key</th>
                   <th>Project Count</th>
                   <th>Hours</th>
@@ -594,7 +640,7 @@ function Phase2Admin() {
               <tbody>
                 {(latest.typeSubtotals || []).map((ts, i) => (
                   <tr key={i}>
-                    <td><strong>{ts.projectType}</strong></td>
+                    <td><strong>{ts.sourceValue || ts.projectType}</strong></td>
                     <td>{ts.fingerprintKey}</td>
                     <td>{metricValue(ts.projectCount)}</td>
                     <td>{metricValue(ts.hours)}</td>
@@ -654,30 +700,174 @@ function Phase2Admin() {
       <Blueprint>
         <div className="section-heading">
           <div>
-            <h3>Mappings</h3>
-            <p className="muted">Map BQE project types to estimating fingerprints.</p>
+            <h3>D-2: Mapping Source Control</h3>
+            <p className="muted">Select the BQE field driving Phase 2 estimation mapping.</p>
           </div>
         </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Project Type</th>
-                <th>Unmapped Hours (Count)</th>
-                <th>Fingerprint</th>
-                <th>Active</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {combinedMappings.map(row => (
-                <MappingRow key={row.projectType} row={row} fingerprints={fingerprints} onSave={updateMapping} />
+
+        <div className="filters">
+          <select value={localSourceKind} onChange={e => setLocalSourceKind(e.target.value)} disabled={savingSource}>
+            <option value="">Unselected</option>
+            <option value="class">Project class</option>
+            <option value="custom_field">Project custom field</option>
+            <option value="name_pattern">Name-pattern review (future)</option>
+          </select>
+
+          {localSourceKind === "custom_field" && (
+            <select value={localSourceFieldKey} onChange={e => setLocalSourceFieldKey(e.target.value)} disabled={savingSource}>
+              <option value="">Select custom field…</option>
+              {(mappingsData?.candidateFields || []).map(f => (
+                <option key={f.fieldKey} value={f.fieldKey}>{f.label} ({f.distinctValueCount} values)</option>
               ))}
-              {combinedMappings.length === 0 && (
-                <tr><td colSpan="5" className="muted text-center">No project types to map</td></tr>
-              )}
-            </tbody>
-          </table>
+            </select>
+          )}
+
+          {isSourceDirty && (
+            <button className="primary" onClick={handleSaveMappingSource} disabled={savingSource || (localSourceKind === "custom_field" && !localSourceFieldKey)}>
+              {savingSource ? "Saving…" : "Save Source"}
+            </button>
+          )}
+        </div>
+
+        {localSourceKind === "" && (
+          <div className="admin-notice-block danger">
+            <strong>Warning:</strong> Unselected means all projects fail I-2 classification.
+          </div>
+        )}
+        {localSourceKind === "name_pattern" && (
+          <div className="admin-notice-block warning">
+            <strong>Warning:</strong> Name pattern is diagnostic/future and does not auto-classify.
+          </div>
+        )}
+
+        <div className="section-heading mt-6 pt-6 top-rule">
+          <div>
+            <h3>D-2: Value Mappings</h3>
+            <p className="muted">Map distinct source values to estimating fingerprints.</p>
+          </div>
+        </div>
+
+        {editorDisabled ? (
+           <div className="placeholder-panel pt-6 pb-6">
+             <p className="muted">Mapping editor is disabled because the current source is Unselected or Name-pattern.</p>
+           </div>
+        ) : (
+          <div className="table-wrap" style={{marginTop: 0}}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Source Value</th>
+                  <th>Hours (Projects)</th>
+                  <th>Fingerprint</th>
+                  <th>Active</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {combinedMappings.map((m, i) => (
+                  <MappingRow key={`${m.sourceValue}-${i}`} row={m} fingerprints={fingerprints} onSave={updateMapping} disabled={editorDisabled} />
+                ))}
+                {combinedMappings.length === 0 && (
+                  <tr><td colSpan="5" className="text-center muted">No values found for the current mapping source.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Blueprint>
+
+      <Blueprint>
+        <div className="section-heading">
+          <div>
+            <h3>Diagnostics & Audit Tables</h3>
+            <p className="muted">Review data distribution for mapping strategies.</p>
+          </div>
+        </div>
+
+        <div className="two-col">
+          <div>
+            <h4 className="mb-3">Project Class Values</h4>
+            <div className="table-wrap" style={{marginTop: 0}}>
+              <table>
+                <thead>
+                  <tr><th>Value</th><th>Projects</th><th>Hours</th></tr>
+                </thead>
+                <tbody>
+                  {(latest?.classDiagnostics || []).map((c, i) => (
+                    <tr key={i}>
+                      <td className="break-word">{c.value || "(Empty)"}</td>
+                      <td>{metricValue(c.projectCount)}</td>
+                      <td>{metricValue(c.hours)}</td>
+                    </tr>
+                  ))}
+                  {!(latest?.classDiagnostics?.length) && <tr><td colSpan="3" className="text-center muted">No class values found</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div>
+            <h4 className="mb-3">Project Custom-Field Values</h4>
+            {(() => {
+              const cfGroups = (latest?.customFieldDiagnostics || []).reduce((acc, c) => {
+                if (!acc[c.fieldLabel]) acc[c.fieldLabel] = [];
+                acc[c.fieldLabel].push(c);
+                return acc;
+              }, {});
+              const entries = Object.entries(cfGroups);
+              if (entries.length === 0) {
+                return <p className="muted mt-4">No custom field values found.</p>;
+              }
+              return entries.map(([label, items]) => (
+                <div key={label} className="mb-4">
+                  <strong className="overline">{label}</strong>
+                  <div className="table-wrap" style={{marginTop: 4}}>
+                    <table>
+                      <thead>
+                        <tr><th>Value</th><th>Projects</th><th>Hours</th></tr>
+                      </thead>
+                      <tbody>
+                        {items.map((c, i) => (
+                          <tr key={i}>
+                            <td className="break-word">{c.value || "(Empty)"}</td>
+                            <td>{metricValue(c.projectCount)}</td>
+                            <td>{metricValue(c.hours)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ));
+            })()}
+          </div>
+        </div>
+
+        <div className="mt-6 pt-6 top-rule">
+          <div className="section-heading mb-3">
+            <div>
+              <h4 className="mb-2">Text Hints from Names</h4>
+              <span className="badge high mb-2">NON-AUTHORITATIVE</span>
+              <p className="muted">This is a human review worksheet only. These hints are extracted diagnostically and do not perform classification.</p>
+            </div>
+          </div>
+          <div className="table-wrap" style={{ maxHeight: "400px", overflowY: "auto" }}>
+            <table>
+              <thead style={{ position: "sticky", top: 0, zIndex: 1, background: "rgba(255,255,255,0.95)" }}>
+                <tr><th>Hint Value</th><th>Projects</th><th>Hours</th></tr>
+              </thead>
+              <tbody>
+                {(latest?.textHintDiagnostics || []).map((t, i) => (
+                  <tr key={i}>
+                    <td className="break-word">{t.value || "(Empty)"}</td>
+                    <td>{metricValue(t.projectCount)}</td>
+                    <td>{metricValue(t.hours)}</td>
+                  </tr>
+                ))}
+                {!(latest?.textHintDiagnostics?.length) && <tr><td colSpan="3" className="text-center muted">No text hints found</td></tr>}
+              </tbody>
+            </table>
+          </div>
         </div>
       </Blueprint>
 
@@ -705,7 +895,7 @@ function Phase2Admin() {
                 <tr key={run.id}>
                   <td><strong>{run.id.slice(0, 8)}</strong></td>
                   <td>{new Date(run.createdAt).toLocaleString()}</td>
-                    <td><span className={`badge ${run.passed ? "low" : "high"}`}>{run.passed ? "PASS" : "FAIL"}</span></td>
+                  <td><span className={`badge ${run.passed ? "low" : "high"}`}>{run.passed ? "PASS" : "FAIL"}</span></td>
                   <td>{metricValue(run.anchorHours)}</td>
                   <td>{metricValue(run.differenceHours)}</td>
                   <td>

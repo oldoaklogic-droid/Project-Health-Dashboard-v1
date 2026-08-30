@@ -7,6 +7,7 @@ export const fixtureObjectCounts: Record<BqeObjectType, number> = {
   budget: 0,
   invoice: 2,
   payment: 2,
+  customfieldvalue: 0,
 };
 
 export const partialPullFixture = {

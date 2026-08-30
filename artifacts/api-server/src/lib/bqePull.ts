@@ -5,6 +5,7 @@ import {
   bqeBudgetsTable,
   bqeInvoicesTable,
   bqePaymentsTable,
+  bqeProjectCustomFieldsTable,
   bqeProjectsTable,
   bqePullRunsTable,
   bqeReconciliationTable,
@@ -35,6 +36,7 @@ export const BQE_OBJECT_TYPES = [
   "budget",
   "invoice",
   "payment",
+  "customfieldvalue",
 ] as const;
 export type BqeObjectType = (typeof BQE_OBJECT_TYPES)[number];
 
@@ -120,6 +122,8 @@ const FIELD_CONFIG: Record<BqeObjectType, FieldConfig> = {
       "parentId",
       "rootProjectId",
       "type",
+      "class",
+      "classId",
     ],
     dateFilter: false,
   },
@@ -205,6 +209,11 @@ const FIELD_CONFIG: Record<BqeObjectType, FieldConfig> = {
       "lineItems",
     ],
     dateFilter: true,
+  },
+  customfieldvalue: {
+    endpoint: "customfieldvalue",
+    fields: ["id", "customFieldId", "entityId", "entityType", "value", "description", "label", "type"],
+    dateFilter: false,
   },
 };
 
@@ -521,7 +530,8 @@ async function upsertRows(
     | typeof bqeActivitiesTable
     | typeof bqeBudgetsTable
     | typeof bqeInvoicesTable
-    | typeof bqePaymentsTable,
+    | typeof bqePaymentsTable
+    | typeof bqeProjectCustomFieldsTable,
   rows: Record<string, unknown>[],
 ): Promise<void> {
   const tableWithRecordId = table as typeof bqeProjectsTable;
@@ -555,6 +565,8 @@ async function persistProjects(records: BqeRecord[], pulledAt: Date): Promise<nu
     parentId: textValue(getValue(record, ["parentId", "parent.id"])),
     rootProjectId: textValue(getValue(record, ["rootProjectId", "rootProject.id"])),
     projectType: textValue(getValue(record, ["type", "projectType"])),
+    projectClass: textValue(getValue(record, ["class", "projectClass"])),
+    projectClassId: textValue(getValue(record, ["classId", "class.id", "projectClassId"])),
     client: textValue(getValue(record, ["client", "clientName", "client.name"])),
     status: textValue(getValue(record, ["status", "projectStatus"])),
     contractType: textValue(getValue(record, ["contractType", "contract.type"])),
@@ -566,6 +578,37 @@ async function persistProjects(records: BqeRecord[], pulledAt: Date): Promise<nu
     ),
   }));
   await upsertRows(bqeProjectsTable, rows);
+  return rows.length;
+}
+
+async function persistProjectCustomFields(
+  records: BqeRecord[],
+  pulledAt: Date,
+): Promise<number> {
+  const storedProjects = await db.select({ recordId: bqeProjectsTable.recordId }).from(bqeProjectsTable);
+  const projectIds = new Set(storedProjects.map((project) => project.recordId));
+  const rows = records
+    .filter((record) => {
+      const entityId = textValue(getValue(record, ["entityId", "entity.id", "projectId", "project.id"]));
+      return entityId !== null && projectIds.has(entityId);
+    })
+    .map((record) => {
+      const entityId = textValue(getValue(record, ["entityId", "entity.id", "projectId", "project.id"]));
+      return {
+        recordId: recordId(record, "customfieldvalue"),
+        pulledAt,
+        rawJson: asRawJson(record),
+        projectId: entityId,
+        entityId,
+        customFieldId: textValue(getValue(record, ["customFieldId", "customField.id"])),
+        entityType: textValue(getValue(record, ["entityType", "entity.type"])),
+        label: textValue(getValue(record, ["label", "customField.label", "customField.name"])),
+        value: textValue(getValue(record, ["value"])),
+        description: textValue(getValue(record, ["description"])),
+        fieldType: textValue(getValue(record, ["type", "customField.type"])),
+      };
+    });
+  await upsertRows(bqeProjectCustomFieldsTable, rows);
   return rows.length;
 }
 
@@ -747,6 +790,8 @@ async function persistObjectRecords(
       return persistInvoices(records, pulledAt);
     case "payment":
       return persistPayments(records, pulledAt);
+    case "customfieldvalue":
+      return persistProjectCustomFields(records, pulledAt);
   }
 }
 
@@ -758,6 +803,7 @@ function emptyObjectCounts(): Record<BqeObjectType, number> {
     budget: 0,
     invoice: 0,
     payment: 0,
+    customfieldvalue: 0,
   };
 }
 

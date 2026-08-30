@@ -5,7 +5,9 @@ import {
   bqeConnectionTable,
   bqeFingerprintKeysTable,
   bqePhase2ReconciliationRunsTable,
-  bqeProjectTypeMappingsTable,
+  bqePhase2MappingSourceTable,
+  bqePhase2DiagnosticsTable,
+  bqeProjectSourceMappingsTable,
   bqePullRunsTable,
   dashboardAccessChangesTable,
   db,
@@ -49,6 +51,7 @@ router.get("/bqe/test", async (req, res): Promise<void> => {
     projectUrl.searchParams.set("where", "code='23-0091'");
 
     const response = await fetch(projectUrl, {
+      method: "GET",
       headers: {
         accept: "application/json",
         authorization: `Bearer ${accessToken}`,
@@ -146,29 +149,82 @@ router.post("/admin/phase2/reconciliation", requireDashboardAdmin, async (req, r
 
 router.get("/admin/phase2/mappings", requireDashboardAdmin, async (_req, res): Promise<void> => {
   await ensureFingerprintSeeds();
-  const [fingerprints, mappings] = await Promise.all([
+  const [fingerprints, sourceRows, latestRuns] = await Promise.all([
     db.select().from(bqeFingerprintKeysTable).orderBy(bqeFingerprintKeysTable.sortOrder),
-    db.select().from(bqeProjectTypeMappingsTable).orderBy(bqeProjectTypeMappingsTable.bqeProjectType),
+    db.select().from(bqePhase2MappingSourceTable).where(eq(bqePhase2MappingSourceTable.id, 1)).limit(1),
+    db.select().from(bqePhase2ReconciliationRunsTable).orderBy(desc(bqePhase2ReconciliationRunsTable.createdAt)).limit(1),
   ]);
-  res.json({ fingerprints, mappings: mappings.map((mapping) => ({ ...mapping, updatedAt: mapping.updatedAt.toISOString() })) });
+  const source = sourceRows[0] ?? null;
+  const mappingFieldKey = source?.sourceKind === "custom_field" ? source.sourceFieldKey : source?.sourceKind;
+  const mappings = source?.sourceKind && mappingFieldKey
+    ? await db.select().from(bqeProjectSourceMappingsTable).where(eq(bqeProjectSourceMappingsTable.sourceKind, source.sourceKind))
+    : [];
+  const diagnosticRows = latestRuns[0]
+    ? await db.select().from(bqePhase2DiagnosticsTable).where(eq(bqePhase2DiagnosticsTable.runId, latestRuns[0].id))
+    : [];
+  const candidateFields = new Map<string, { fieldKey: string; label: string; values: Set<string>; projectCount: number; hours: number }>();
+  for (const row of diagnosticRows.filter((row) => row.diagnosticKind === "custom_field")) {
+    const fieldKey = row.fieldKey ?? row.fieldLabel ?? "(blank)";
+    const label = row.fieldLabel ?? "(blank)";
+    const key = `${fieldKey}\u0000${label}`;
+    const candidate = candidateFields.get(key) ?? { fieldKey, label, values: new Set<string>(), projectCount: 0, hours: 0 };
+    candidate.values.add(row.value);
+    candidate.projectCount += row.projectCount;
+    candidate.hours += Number(row.hours);
+    candidateFields.set(key, candidate);
+  }
+  res.json({
+    fingerprints,
+    source: source ? { ...source, updatedAt: source.updatedAt?.toISOString() ?? null } : { sourceKind: null, sourceFieldKey: null, updatedBy: null, updatedAt: null },
+    candidateFields: [...candidateFields.values()].map((candidate) => ({
+      fieldKey: candidate.fieldKey,
+      label: candidate.label,
+      distinctValueCount: candidate.values.size,
+      projectCount: candidate.projectCount,
+      hours: candidate.hours,
+    })),
+    mappings: mappings.filter((mapping) => mapping.sourceFieldKey === mappingFieldKey)
+      .map((mapping) => ({ ...mapping, updatedAt: mapping.updatedAt.toISOString() })),
+  });
 });
 
-router.put("/admin/phase2/mappings/:bqeProjectType", requireDashboardAdmin, async (req, res): Promise<void> => {
-  const bqeProjectType = Array.isArray(req.params.bqeProjectType) ? req.params.bqeProjectType[0] : req.params.bqeProjectType;
+router.put("/admin/phase2/mapping-source", requireDashboardAdmin, async (req, res): Promise<void> => {
+  const sourceKind = req.body?.sourceKind;
+  const sourceFieldKey = req.body?.sourceFieldKey;
+  if (sourceKind !== null && sourceKind !== "class" && sourceKind !== "custom_field" && sourceKind !== "name_pattern") {
+    res.status(400).json({ error: "sourceKind must be null, class, custom_field, or name_pattern." }); return;
+  }
+  if (sourceKind === "custom_field" && (typeof sourceFieldKey !== "string" || !sourceFieldKey.trim())) {
+    res.status(400).json({ error: "custom_field requires a custom field ID or exact label selector." }); return;
+  }
+  if (sourceKind !== "custom_field" && sourceFieldKey !== null && sourceFieldKey !== undefined) {
+    res.status(400).json({ error: "Only custom_field accepts sourceFieldKey." }); return;
+  }
+  const now = new Date();
+  await db.insert(bqePhase2MappingSourceTable).values({ id: 1, sourceKind, sourceFieldKey: sourceKind === "custom_field" ? sourceFieldKey : null, updatedBy: res.locals.userId, updatedAt: now })
+    .onConflictDoUpdate({ target: bqePhase2MappingSourceTable.id, set: { sourceKind, sourceFieldKey: sourceKind === "custom_field" ? sourceFieldKey : null, updatedBy: res.locals.userId, updatedAt: now } });
+  res.json({ sourceKind, sourceFieldKey: sourceKind === "custom_field" ? sourceFieldKey : null, updatedBy: res.locals.userId, updatedAt: now.toISOString() });
+});
+
+router.put("/admin/phase2/mappings/:sourceValue", requireDashboardAdmin, async (req, res): Promise<void> => {
+  const sourceValue = Array.isArray(req.params.sourceValue) ? req.params.sourceValue[0] : req.params.sourceValue;
   const fingerprintKey = req.body?.fingerprintKey;
   const active = req.body?.active;
-  if (!bqeProjectType || bqeProjectType.trim() !== bqeProjectType || !fingerprintKey || typeof fingerprintKey !== "string" || typeof active !== "boolean") {
-    res.status(400).json({ error: "bqeProjectType, fingerprintKey, and boolean active are required; type spelling is case-sensitive." });
+  if (!sourceValue || sourceValue.trim() !== sourceValue || !fingerprintKey || typeof fingerprintKey !== "string" || typeof active !== "boolean") {
+    res.status(400).json({ error: "sourceValue, fingerprintKey, and boolean active are required; source spelling is case-sensitive." });
     return;
   }
+  const source = (await db.select().from(bqePhase2MappingSourceTable).where(eq(bqePhase2MappingSourceTable.id, 1)).limit(1))[0];
+  const mappingFieldKey = source?.sourceKind === "custom_field" ? source.sourceFieldKey : source?.sourceKind;
+  if (!source?.sourceKind || !mappingFieldKey) { res.status(422).json({ error: "Select a mapping source before creating mappings." }); return; }
   await ensureFingerprintSeeds();
   const fingerprint = await db.select({ key: bqeFingerprintKeysTable.key }).from(bqeFingerprintKeysTable)
     .where(eq(bqeFingerprintKeysTable.key, fingerprintKey)).limit(1);
   if (!fingerprint[0]) { res.status(400).json({ error: "fingerprintKey is not a seeded fingerprint." }); return; }
   const now = new Date();
-  await db.insert(bqeProjectTypeMappingsTable).values({ bqeProjectType, fingerprintKey, active, updatedBy: res.locals.userId, updatedAt: now })
-    .onConflictDoUpdate({ target: bqeProjectTypeMappingsTable.bqeProjectType, set: { fingerprintKey, active, updatedBy: res.locals.userId, updatedAt: now } });
-  res.json({ bqeProjectType, fingerprintKey, active, updatedBy: res.locals.userId, updatedAt: now.toISOString() });
+  await db.insert(bqeProjectSourceMappingsTable).values({ sourceKind: source.sourceKind, sourceFieldKey: mappingFieldKey, sourceValue, fingerprintKey, active, updatedBy: res.locals.userId, updatedAt: now })
+    .onConflictDoUpdate({ target: [bqeProjectSourceMappingsTable.sourceKind, bqeProjectSourceMappingsTable.sourceFieldKey, bqeProjectSourceMappingsTable.sourceValue], set: { fingerprintKey, active, updatedBy: res.locals.userId, updatedAt: now } });
+  res.json({ sourceKind: source.sourceKind, sourceFieldKey: mappingFieldKey, sourceValue, fingerprintKey, active, updatedBy: res.locals.userId, updatedAt: now.toISOString() });
 });
 
 router.get("/admin/phase2/reconciliation/:runId/:report.csv", requireDashboardAdmin, async (req, res): Promise<void> => {
@@ -178,9 +234,9 @@ router.get("/admin/phase2/reconciliation/:runId/:report.csv", requireDashboardAd
   const run = runId ? await getPhase2Run(runId) : null;
   if (!run) { res.status(404).json({ error: "Phase 2 reconciliation run not found." }); return; }
   const rows = run.dispositions.filter((item) => report === "population" ? item.disposition !== "excluded" : item.disposition === "excluded")
-    .map((item) => ({ projectCode: item.projectCode, projectName: item.projectName, projectType: item.projectType, status: item.status, fingerprintKey: item.fingerprintKey, disposition: item.disposition, failedRules: item.failedRules.join("|"), hours: item.hours }));
+    .map((item) => ({ projectCode: item.projectCode, projectName: item.projectName, projectType: item.projectType, mappingSourceKind: item.mappingSourceKind, mappingSourceFieldKey: item.mappingSourceFieldKey, mappingSourceValue: item.mappingSourceValue, status: item.status, fingerprintKey: item.fingerprintKey, disposition: item.disposition, failedRules: item.failedRules.join("|"), hours: item.hours }));
   const filename = `phase2-${report}-${run.id}.csv`;
-  res.attachment(filename).type("text/csv").send(toCsv(["projectCode", "projectName", "projectType", "status", "fingerprintKey", "disposition", "failedRules", "hours"], rows));
+  res.attachment(filename).type("text/csv").send(toCsv(["projectCode", "projectName", "projectType", "mappingSourceKind", "mappingSourceFieldKey", "mappingSourceValue", "status", "fingerprintKey", "disposition", "failedRules", "hours"], rows));
 });
 
 router.get("/admin/status", requireDashboardAdmin, async (_req, res): Promise<void> => {

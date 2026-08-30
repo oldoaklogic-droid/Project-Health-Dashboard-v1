@@ -1,13 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
   bqeActivitiesTable,
   bqeFingerprintKeysTable,
+  bqePhase2DiagnosticsTable,
+  bqePhase2MappingSourceTable,
   bqePhase2NonProjectBucketsTable,
   bqePhase2ProjectDispositionsTable,
   bqePhase2ReconciliationRunsTable,
   bqePhase2TypeSubtotalsTable,
-  bqeProjectTypeMappingsTable,
+  bqeProjectCustomFieldsTable,
+  bqeProjectSourceMappingsTable,
   bqeProjectsTable,
   bqePullRunsTable,
   bqeReconciliationTable,
@@ -29,11 +32,13 @@ export const FINGERPRINT_SEEDS = [
 export const NON_PROJECT_BUCKETS = ["Admin", "Overhead", "PTO", "Business Development", "Internal"] as const;
 type Bucket = (typeof NON_PROJECT_BUCKETS)[number];
 
-export type ClassifierProject = { id: string | null; code: string | null; name: string | null; type: string | null; status: string | null };
+export type MappingSourceKind = "class" | "custom_field" | "name_pattern";
+export type ClassifierProject = { id: string | null; code: string | null; name: string | null; type: string | null; projectClass?: string | null; sourceValue?: string | null; status: string | null };
 export type ClassifierEntry = { projectId: string | null; projectCode: string | null; activityId: string | null; activityCode: string | null; hours: number };
 export type Mapping = { fingerprintKey: string; active: boolean };
 export type Disposition = {
   projectId: string | null; projectCode: string | null; projectName: string | null; projectType: string | null;
+  mappingSourceKind?: MappingSourceKind | null; mappingSourceFieldKey?: string | null; mappingSourceValue?: string | null;
   status: string | null; fingerprintKey: string | null; disposition: "cohort_a" | "cohort_b" | "excluded";
   failedRules: string[]; hours: number;
 };
@@ -75,7 +80,7 @@ export function classifyProjects(
     if (!entry.activityCode && (!entry.activityId || !activityCodesById.get(entry.activityId))) unresolvedActivity.add(project);
   }
   return projects.map((project) => {
-    const mapping = project.type === null ? undefined : mappings.get(project.type);
+    const mapping = project.sourceValue == null ? undefined : mappings.get(project.sourceValue);
     const failedRules: string[] = [];
     if (!project.id || !entryCount.get(project)) failedRules.push("I-1");
     if (!mapping?.active) failedRules.push("I-2");
@@ -86,7 +91,7 @@ export function classifyProjects(
       : normalizedProjectStatus(project.status) === "completed"
         ? "cohort_a"
         : "cohort_b";
-    return { projectId: project.id, projectCode: project.code, projectName: project.name, projectType: project.type, status: project.status, fingerprintKey: mapping?.fingerprintKey ?? null, disposition, failedRules, hours: round(hours.get(project) ?? 0) };
+    return { projectId: project.id, projectCode: project.code, projectName: project.name, projectType: project.type, mappingSourceValue: project.sourceValue ?? null, status: project.status, fingerprintKey: mapping?.fingerprintKey ?? null, disposition, failedRules, hours: round(hours.get(project) ?? 0) };
   });
 }
 
@@ -106,6 +111,63 @@ export function reconciliationControls(values: {
     projectCountDifference: values.universeProjectCount - values.dispositionProjectCount - values.nonProjectProjectCount,
     typeSubtotalDifference: round(values.typeSubtotalHours - values.population - values.exclusions),
   };
+}
+
+export type Phase2Diagnostic = {
+  diagnosticKind: "class" | "custom_field" | "text_hint";
+  fieldKey: string | null;
+  fieldLabel: string | null;
+  value: string;
+  projectCount: number;
+  hours: number;
+};
+
+/** Builds immutable, source-neutral evidence over the classified project universe. */
+export function buildPhase2Diagnostics(
+  projects: ClassifierProject[],
+  dispositions: Disposition[],
+  customFields: Array<{ projectId: string | null; customFieldId: string | null; label: string | null; value: string | null }>,
+): Phase2Diagnostic[] {
+  const dispositionByProjectId = new Map(dispositions
+    .filter((disposition) => disposition.projectId)
+    .map((disposition) => [disposition.projectId!, disposition]));
+  const diagnosticProjects = projects.filter((project) =>
+    project.id !== null && dispositionByProjectId.has(project.id),
+  );
+  const hoursFor = (project: ClassifierProject) =>
+    dispositionByProjectId.get(project.id!)?.hours ?? 0;
+  const output: Phase2Diagnostic[] = [];
+  const classGroups = new Map<string, ClassifierProject[]>();
+  for (const project of diagnosticProjects) {
+    const value = project.projectClass?.trim() || "(blank)";
+    classGroups.set(value, [...(classGroups.get(value) ?? []), project]);
+  }
+  for (const [value, members] of classGroups) {
+    output.push({ diagnosticKind: "class", fieldKey: "class", fieldLabel: "Class", value, projectCount: members.length, hours: round(members.reduce((total, project) => total + hoursFor(project), 0)) });
+  }
+  const customGroups = new Map<string, { fieldKey: string | null; label: string; value: string; members: Set<string> }>();
+  for (const field of customFields) {
+    if (!field.projectId || !dispositionByProjectId.has(field.projectId)) continue;
+    const fieldKey = field.customFieldId?.trim() || null;
+    const label = field.label?.trim() || "(blank)";
+    const value = field.value?.trim() || "(blank)";
+    const key = `${fieldKey ?? ""}\u0000${label}\u0000${value}`;
+    const group = customGroups.get(key) ?? { fieldKey, label, value, members: new Set<string>() };
+    group.members.add(field.projectId);
+    customGroups.set(key, group);
+  }
+  for (const group of customGroups.values()) {
+    output.push({ diagnosticKind: "custom_field", fieldKey: group.fieldKey, fieldLabel: group.label, value: group.value, projectCount: group.members.size, hours: round([...group.members].reduce((total, projectId) => total + (dispositionByProjectId.get(projectId)?.hours ?? 0), 0)) });
+  }
+  const hints: Array<[string, RegExp]> = [["Short Plat / SP", /\b(short plat|sp)\b/i], ["Subdivision", /\bsubdivision\b/i], ["Site Plan", /\bsite plan\b/i], ["Topo", /\btopo(graphic)?\b/i], ["Boundary", /\bboundary\b/i], ["ALTA", /\balta\b/i], ["Plat", /\bplat\b/i]];
+  for (const [label, pattern] of hints) {
+    const members = diagnosticProjects.filter((project) => {
+      const text = `${project.code ?? ""} ${project.name ?? ""}`;
+      return hints.find(([, candidate]) => candidate.test(text))?.[0] === label;
+    });
+    output.push({ diagnosticKind: "text_hint", fieldKey: null, fieldLabel: label, value: label, projectCount: members.length, hours: round(members.reduce((total, project) => total + hoursFor(project), 0)) });
+  }
+  return output;
 }
 
 export async function ensureFingerprintSeeds(): Promise<void> {
@@ -134,14 +196,33 @@ export async function createPhase2Reconciliation(createdBy: string) {
   if (!latestPull || latestPull.id !== source.pullRunId || latestPull.status !== "completed") {
     throw new Error("D-1 cannot run because the current PostgreSQL dataset is not the latest completed Phase 1 pull.");
   }
-  const [projects, entries, activities, mappings] = await Promise.all([
+  const [projects, entries, activities, customFields, sourceConfig] = await Promise.all([
     tx.select().from(bqeProjectsTable), tx.select().from(bqeTimeEntriesTable),
     tx.select().from(bqeActivitiesTable), tx.select({
-      bqeProjectType: bqeProjectTypeMappingsTable.bqeProjectType,
-      fingerprintKey: bqeProjectTypeMappingsTable.fingerprintKey,
-      active: bqeProjectTypeMappingsTable.active,
-    }).from(bqeProjectTypeMappingsTable),
+      recordId: bqeProjectCustomFieldsTable.recordId,
+      projectId: bqeProjectCustomFieldsTable.projectId,
+      customFieldId: bqeProjectCustomFieldsTable.customFieldId,
+      label: bqeProjectCustomFieldsTable.label,
+      value: bqeProjectCustomFieldsTable.value,
+    }).from(bqeProjectCustomFieldsTable),
+    tx.select().from(bqePhase2MappingSourceTable).where(eq(bqePhase2MappingSourceTable.id, 1)).limit(1),
   ]);
+  const selectedSource = sourceConfig[0] ?? null;
+  const sourceKind = selectedSource?.sourceKind as MappingSourceKind | null;
+  const sourceFieldKey = selectedSource?.sourceFieldKey ?? null;
+  const mappingFieldKey = sourceKind === "custom_field" ? sourceFieldKey : sourceKind;
+  const mappings = sourceKind && mappingFieldKey
+    ? await tx.select({
+      sourceValue: bqeProjectSourceMappingsTable.sourceValue,
+      sourceFieldKey: bqeProjectSourceMappingsTable.sourceFieldKey,
+      fingerprintKey: bqeProjectSourceMappingsTable.fingerprintKey,
+      active: bqeProjectSourceMappingsTable.active,
+    }).from(bqeProjectSourceMappingsTable)
+      .where(and(
+        eq(bqeProjectSourceMappingsTable.sourceKind, sourceKind),
+        eq(bqeProjectSourceMappingsTable.sourceFieldKey, mappingFieldKey),
+      ))
+    : [];
   const inRange = entries.filter((e) => e.entryDate !== null && e.entryDate >= "2026-01-01" && e.entryDate <= source.asOfDate!);
   const latestProjects = new Map<string, (typeof projects)[number]>();
   for (const project of projects) {
@@ -149,8 +230,19 @@ export async function createPhase2Reconciliation(createdBy: string) {
     const existing = latestProjects.get(key);
     if (!existing || project.pulledAt > existing.pulledAt) latestProjects.set(key, project);
   }
+  const sourceValueFor = (project: { recordId: string; projectClass: string | null }) => {
+    if (sourceKind === "class") return project.projectClass;
+    if (sourceKind !== "custom_field" || !sourceFieldKey) return null;
+    const values = new Set(customFields
+      .filter((field) => field.projectId === project.recordId &&
+        (field.customFieldId === sourceFieldKey || field.label === sourceFieldKey))
+      .map((field) => field.value?.trim() ?? "")
+      .filter(Boolean));
+    return values.size === 1 ? [...values][0]! : null;
+  };
   const allProjectRows: ClassifierProject[] = [...latestProjects.values()].map((p) => ({
-    id: p.recordId, code: p.code, name: p.name, type: p.projectType, status: p.status,
+    id: p.recordId, code: p.code, name: p.name, type: p.projectType,
+    projectClass: p.projectClass, sourceValue: sourceValueFor(p), status: p.status,
   }));
   const allById = new Map(allProjectRows.filter((p) => p.id).map((p) => [p.id!, p]));
   const allByCode = new Map(allProjectRows.filter((p) => p.code).map((p) => [p.code!, p]));
@@ -164,11 +256,13 @@ export async function createPhase2Reconciliation(createdBy: string) {
       seenProjects.add(project);
     } else if (!project) {
       const orphan = projectRows.find((p) => !p.id && p.code === entry.projectCode);
-      if (!orphan) projectRows.push({ id: null, code: entry.projectCode, name: null, type: null, status: null });
+       if (!orphan) projectRows.push({ id: null, code: entry.projectCode, name: null, type: null, projectClass: null, sourceValue: null, status: null });
     }
   }
   const activityCodes = new Map(activities.filter((a) => a.code).map((a) => [a.recordId, a.code!]));
-  const map = new Map(mappings.map((m) => [m.bqeProjectType, { fingerprintKey: m.fingerprintKey, active: m.active }]));
+   const map = new Map(mappings
+     .filter((m) => m.sourceFieldKey === mappingFieldKey)
+     .map((m) => [m.sourceValue, { fingerprintKey: m.fingerprintKey, active: m.active }]));
   const entryRows = inRange.map((e) => ({ projectId: e.projectId, projectCode: e.projectCode, activityId: e.activityId, activityCode: e.activityCode, hours: numberOrZero(e.hours) }));
   const buckets = new Map<Bucket, { hours: number; projects: Set<string>; entryCount: number }>(
     NON_PROJECT_BUCKETS.map((b) => [b, { hours: 0, projects: new Set(), entryCount: 0 }]),
@@ -197,7 +291,12 @@ export async function createPhase2Reconciliation(createdBy: string) {
   const overallPass = Object.entries(controls).filter(([key]) => key.endsWith("Difference")).every(([, value]) => value === 0);
   const snapshotRunId = randomUUID();
     await tx.insert(bqePhase2ReconciliationRunsTable).values({ id: snapshotRunId, sourceReconciliationId: source.id, sourcePullRunId: source.pullRunId, asOfDate: source.asOfDate!, anchorHours: String(PHASE2_ANCHOR_HOURS), createdBy, overallPass, controls });
-    if (dispositions.length) await tx.insert(bqePhase2ProjectDispositionsTable).values(dispositions.map((d) => ({ id: randomUUID(), runId: snapshotRunId, ...d, hours: String(d.hours) })));
+    if (dispositions.length) await tx.insert(bqePhase2ProjectDispositionsTable).values(dispositions.map((d) => ({
+      id: randomUUID(), runId: snapshotRunId, ...d,
+      mappingSourceKind: sourceKind,
+      mappingSourceFieldKey: mappingFieldKey,
+      hours: String(d.hours),
+    })));
     await tx.insert(bqePhase2NonProjectBucketsTable).values(NON_PROJECT_BUCKETS.map((bucket) => ({
       id: randomUUID(),
       runId: snapshotRunId,
@@ -207,8 +306,14 @@ export async function createPhase2Reconciliation(createdBy: string) {
       entryCount: buckets.get(bucket)!.entryCount,
     })));
     const subtotals = new Map<string, { hours: number; count: number; fingerprint: string | null; mapped: boolean }>();
-    for (const d of dispositions) { const key = d.projectType ?? "(unmapped)"; const old = subtotals.get(key) ?? { hours: 0, count: 0, fingerprint: d.fingerprintKey, mapped: !!map.get(key)?.active }; old.hours += d.hours; old.count += 1; subtotals.set(key, old); }
-    if (subtotals.size) await tx.insert(bqePhase2TypeSubtotalsTable).values([...subtotals.entries()].map(([bqeProjectType, s]) => ({ id: randomUUID(), runId: snapshotRunId, bqeProjectType: bqeProjectType === "(unmapped)" ? null : bqeProjectType, fingerprintKey: s.fingerprint, mapped: s.mapped, hours: String(round(s.hours)), projectCount: s.count })));
+    for (const d of dispositions) { const key = d.mappingSourceValue ?? "(blank)"; const old = subtotals.get(key) ?? { hours: 0, count: 0, fingerprint: d.fingerprintKey, mapped: !!map.get(key)?.active }; old.hours += d.hours; old.count += 1; subtotals.set(key, old); }
+    if (subtotals.size) await tx.insert(bqePhase2TypeSubtotalsTable).values([...subtotals.entries()].map(([bqeProjectType, s]) => ({ id: randomUUID(), runId: snapshotRunId, bqeProjectType: bqeProjectType === "(blank)" ? null : bqeProjectType, fingerprintKey: s.fingerprint, mapped: s.mapped, hours: String(round(s.hours)), projectCount: s.count })));
+    const diagnostics = buildPhase2Diagnostics(
+      projectRows.filter((project) => !nonProjectBucket(project.code, project.name)),
+      dispositions,
+      customFields,
+    );
+    if (diagnostics.length) await tx.insert(bqePhase2DiagnosticsTable).values(diagnostics.map((diagnostic) => ({ id: randomUUID(), runId: snapshotRunId, ...diagnostic, hours: String(diagnostic.hours) })));
   logger.info({ runId: snapshotRunId, overallPass, asOfDate: source.asOfDate }, "Phase 2 BQE reconciliation snapshot created");
   return snapshotRunId;
   }, { isolationLevel: "repeatable read" });
@@ -218,7 +323,7 @@ export async function createPhase2Reconciliation(createdBy: string) {
 export async function getPhase2Run(runId: string) {
   const run = (await db.select().from(bqePhase2ReconciliationRunsTable).where(eq(bqePhase2ReconciliationRunsTable.id, runId)).limit(1))[0];
   if (!run) return null;
-  const [dispositions, buckets, typeSubtotals] = await Promise.all([db.select().from(bqePhase2ProjectDispositionsTable).where(eq(bqePhase2ProjectDispositionsTable.runId, runId)), db.select().from(bqePhase2NonProjectBucketsTable).where(eq(bqePhase2NonProjectBucketsTable.runId, runId)), db.select().from(bqePhase2TypeSubtotalsTable).where(eq(bqePhase2TypeSubtotalsTable.runId, runId))]);
+  const [dispositions, buckets, typeSubtotals, diagnostics, sourceRows] = await Promise.all([db.select().from(bqePhase2ProjectDispositionsTable).where(eq(bqePhase2ProjectDispositionsTable.runId, runId)), db.select().from(bqePhase2NonProjectBucketsTable).where(eq(bqePhase2NonProjectBucketsTable.runId, runId)), db.select().from(bqePhase2TypeSubtotalsTable).where(eq(bqePhase2TypeSubtotalsTable.runId, runId)), db.select().from(bqePhase2DiagnosticsTable).where(eq(bqePhase2DiagnosticsTable.runId, runId)), db.select().from(bqePhase2MappingSourceTable).where(eq(bqePhase2MappingSourceTable.id, 1)).limit(1)]);
   const dispositionRows = dispositions.map((d) => ({ ...d, hours: numberOrZero(d.hours) }));
   const control = run.controls;
   const subtotalRows = typeSubtotals.map((s) => ({
@@ -258,10 +363,17 @@ export async function getPhase2Run(runId: string) {
     dispositions: dispositionRows,
     nonProjectBuckets: buckets.map((b) => ({ ...b, hours: numberOrZero(b.hours) })),
     typeSubtotals: subtotalRows,
-    unmappedTypes: subtotalRows.filter((row) => !row.mapped).map((row) => ({
-      projectType: row.projectType,
-      projectCount: row.projectCount,
+    unmappedValues: subtotalRows.filter((row) => !row.mapped).map((row) => ({
+      sourceValue: row.projectType,
+      count: row.projectCount,
       hours: row.hours,
     })),
+    classDiagnostics: diagnostics.filter((row) => row.diagnosticKind === "class").map((row) => ({ ...row, hours: numberOrZero(row.hours) })),
+    customFieldDiagnostics: diagnostics.filter((row) => row.diagnosticKind === "custom_field").map((row) => ({ ...row, hours: numberOrZero(row.hours) })),
+    textHintDiagnostics: diagnostics.filter((row) => row.diagnosticKind === "text_hint").map((row) => ({ ...row, hours: numberOrZero(row.hours) })),
+    mappingSource: {
+      sourceKind: dispositionRows[0]?.mappingSourceKind ?? sourceRows[0]?.sourceKind ?? null,
+      sourceFieldKey: dispositions[0]?.mappingSourceFieldKey ?? sourceRows[0]?.sourceFieldKey ?? null,
+    },
   };
 }

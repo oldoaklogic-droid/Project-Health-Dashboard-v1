@@ -6,6 +6,7 @@ import {
   jsonb,
   numeric,
   pgTable,
+  primaryKey,
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
@@ -26,6 +27,8 @@ export const bqeProjectsTable = pgTable(
     rootProjectId: text("root_project_id"),
     // BQE type values are labels in some tenants; preserve their exact spelling.
     projectType: text("project_type"),
+    projectClass: text("project_class"),
+    projectClassId: text("project_class_id"),
     client: text("client"),
     status: text("status"),
     contractType: text("contract_type"),
@@ -34,6 +37,26 @@ export const bqeProjectsTable = pgTable(
   },
   (table) => [
     index("bqe_projects_code_idx").on(table.code),
+  ],
+);
+
+/** Raw, immutable evidence returned by BQE's read-only customfieldvalue API. */
+export const bqeProjectCustomFieldsTable = pgTable(
+  "bqe_project_custom_fields",
+  {
+    ...rawRecord,
+    projectId: text("project_id"),
+    entityId: text("entity_id"),
+    customFieldId: text("custom_field_id"),
+    entityType: text("entity_type"),
+    label: text("label"),
+    value: text("value"),
+    description: text("description"),
+    fieldType: text("field_type"),
+  },
+  (table) => [
+    index("bqe_project_custom_fields_project_idx").on(table.projectId),
+    index("bqe_project_custom_fields_entity_idx").on(table.entityId),
   ],
 );
 
@@ -206,15 +229,29 @@ export const bqeFingerprintKeysTable = pgTable("bqe_fingerprint_keys", {
   sortOrder: integer("sort_order").notNull(),
 });
 
-export const bqeProjectTypeMappingsTable = pgTable("bqe_project_type_mappings", {
-  bqeProjectType: text("bqe_project_type").primaryKey(),
+export const bqePhase2MappingSourceTable = pgTable("bqe_phase2_mapping_source", {
+  id: integer("id").primaryKey(),
+  sourceKind: text("source_kind"),
+  sourceFieldKey: text("source_field_key"),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }),
+});
+
+/** Mappings are scoped to the source configuration that produced their values. */
+export const bqeProjectSourceMappingsTable = pgTable("bqe_project_source_mappings", {
+  sourceKind: text("source_kind").notNull(),
+  sourceFieldKey: text("source_field_key").notNull(),
+  sourceValue: text("source_value").notNull(),
   fingerprintKey: text("fingerprint_key")
     .notNull()
     .references(() => bqeFingerprintKeysTable.key),
   active: boolean("active").notNull().default(true),
   updatedBy: text("updated_by").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  primaryKey({ columns: [table.sourceKind, table.sourceFieldKey, table.sourceValue] }),
+  index("bqe_project_source_mappings_fingerprint_idx").on(table.fingerprintKey),
+]);
 
 export const bqePhase2ReconciliationRunsTable = pgTable(
   "bqe_phase2_reconciliation_runs",
@@ -245,6 +282,9 @@ export const bqePhase2ProjectDispositionsTable = pgTable(
     projectCode: text("project_code"),
     projectName: text("project_name"),
     projectType: text("project_type"),
+    mappingSourceKind: text("mapping_source_kind"),
+    mappingSourceFieldKey: text("mapping_source_field_key"),
+    mappingSourceValue: text("mapping_source_value"),
     status: text("status"),
     fingerprintKey: text("fingerprint_key"),
     disposition: text("disposition").notNull(),
@@ -252,6 +292,21 @@ export const bqePhase2ProjectDispositionsTable = pgTable(
     hours: numeric("hours").notNull(),
   },
   (table) => [index("bqe_phase2_dispositions_run_idx").on(table.runId)],
+);
+
+export const bqePhase2DiagnosticsTable = pgTable(
+  "bqe_phase2_diagnostics",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id").notNull().references(() => bqePhase2ReconciliationRunsTable.id),
+    diagnosticKind: text("diagnostic_kind").notNull(),
+    fieldKey: text("field_key"),
+    fieldLabel: text("field_label"),
+    value: text("value").notNull(),
+    projectCount: integer("project_count").notNull(),
+    hours: numeric("hours").notNull(),
+  },
+  (table) => [index("bqe_phase2_diagnostics_run_idx").on(table.runId)],
 );
 
 export const bqePhase2NonProjectBucketsTable = pgTable(
