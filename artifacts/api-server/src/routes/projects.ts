@@ -438,9 +438,12 @@ router.get("/dashboard", async (req, res): Promise<void> => {
 });
 
 router.get("/access", (_req, res): void => {
+  const isAdmin = res.locals.dashboardRole === "admin";
   res.json({
+    userId: res.locals.userId,
     role: res.locals.dashboardRole,
-    canEdit: res.locals.dashboardRole === "editor",
+    canEdit: res.locals.dashboardRole === "editor" || isAdmin,
+    isAdmin,
   });
 });
 

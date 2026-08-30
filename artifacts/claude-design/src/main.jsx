@@ -11,6 +11,15 @@ import {
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import "./styles.css";
 
+// SVG Icons
+const HomeIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>;
+const BarChartIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>;
+const FolderIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>;
+const CalculatorIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></svg>;
+const TrendingUpIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>;
+const UsersIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
+const SettingsIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>;
+
 const tabs = [
   ["exec", "Executive"],
   ["table", "Project table"],
@@ -27,19 +36,26 @@ const metricValue = (value, formatter = number) => value == null ? "—" : forma
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 const clerkPubKey = publishableKeyFromHost(window.location.hostname, import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
+const hubPages = new Set(["home", "reports", "projects", "estimating", "pipeline", "manager", "admin"]);
+const pageFromPath = (pathname) => {
+  const relative = pathname.slice(basePath.length).replace(/^\/+|\/+$/g, "");
+  const page = relative.split("/")[0] || "home";
+  return hubPages.has(page) ? page : "home";
+};
+const pathForPage = (page) => `${basePath}${page === "home" ? "/" : `/${page}`}`;
 
 const clerkAppearance = {
   variables: {
-    colorPrimary: "#416180",
-    colorForeground: "#1d1f20",
-    colorMutedForeground: "#66676c",
-    colorBackground: "#f2f2f3",
-    colorInput: "#f5f5f8",
-    colorInputForeground: "#1d1f20",
-    colorDanger: "#943a34",
-    colorNeutral: "#b7b7ba",
-    fontFamily: "\"Barlow\", system-ui, sans-serif",
-    borderRadius: "4px",
+    colorPrimary: "#38bdf8",
+    colorForeground: "#f0f4f8",
+    colorMutedForeground: "#94a3b8",
+    colorBackground: "#0f1c29",
+    colorInput: "#16283b",
+    colorInputForeground: "#f0f4f8",
+    colorDanger: "#ef4444",
+    colorNeutral: "#475569",
+    fontFamily: "\"Plus Jakarta Sans\", system-ui, sans-serif",
+    borderRadius: "6px",
   },
   options: {
     logoPlacement: "inside",
@@ -47,25 +63,339 @@ const clerkAppearance = {
     logoImageUrl: `${window.location.origin}${basePath}/logo.svg`,
   },
   elements: {
-    cardBox: { backgroundColor: "#f2f2f3", border: "1px solid rgba(29,31,32,.16)", borderRadius: "4px", width: "440px", maxWidth: "100%" },
-    card: { boxShadow: "none", backgroundColor: "transparent" },
+    cardBox: { backgroundColor: "#0f1c29", border: "1px solid rgba(56, 189, 248, 0.15)", borderRadius: "8px", width: "440px", maxWidth: "100%" },
+    card: { boxShadow: "0 8px 30px rgba(56, 189, 248, 0.1)", backgroundColor: "transparent" },
     footer: { boxShadow: "none", backgroundColor: "transparent" },
-    headerTitle: { color: "#1d1f20", fontFamily: "\"Barlow Condensed\", system-ui, sans-serif", fontWeight: 600 },
-    headerSubtitle: { color: "#66676c" },
-    formFieldLabel: { color: "#1d1f20" },
-    formButtonPrimary: { backgroundColor: "#416180" },
-    footerActionLink: { color: "#416180" },
-    footerActionText: { color: "#66676c" },
+    headerTitle: { color: "#f0f4f8", fontFamily: "\"Plus Jakarta Sans\", system-ui, sans-serif", fontWeight: 700 },
+    headerSubtitle: { color: "#94a3b8" },
+    formFieldLabel: { color: "#f0f4f8" },
+    formButtonPrimary: { backgroundColor: "#38bdf8", color: "#071018", fontWeight: 600 },
+    footerActionLink: { color: "#38bdf8" },
+    footerActionText: { color: "#94a3b8" },
   },
 };
 
 function Blueprint({ children, className = "" }) {
-  return <section className={`blueprint ${className}`}><i className="corner tl" /><i className="corner tr" /><i className="corner bl" /><i className="corner br" />{children}</section>;
+  return <section className={`blueprint ${className}`}>{children}</section>;
 }
 
+// Hub Views
+function HomeView({ onNavigate, isAdmin }) {
+  return (
+    <div className="home-view fade-in" data-testid="home-view">
+      <div className="home-hero">
+        <h1>Complete Design, Inc.</h1>
+        <p className="tagline">Where Vision Becomes Legacy</p>
+      </div>
+      <div className="home-cards-grid">
+        <button className="nav-card" onClick={() => onNavigate('reports')} data-testid="nav-card-reports">
+           <div className="icon-wrapper"><BarChartIcon /></div>
+           <div className="nav-card-content">
+             <h3>Reports</h3>
+             <p>Executive summaries, project health, and Tuesday reviews.</p>
+           </div>
+        </button>
+        <button className="nav-card" onClick={() => onNavigate('projects')} data-testid="nav-card-projects">
+           <div className="icon-wrapper"><FolderIcon /></div>
+           <div className="nav-card-content">
+             <h3>Projects</h3>
+             <p>Live reconciled records and targeted project tracking.</p>
+           </div>
+        </button>
+        <button className="nav-card" onClick={() => onNavigate('estimating')} data-testid="nav-card-estimating">
+           <div className="icon-wrapper"><CalculatorIcon /></div>
+           <div className="nav-card-content">
+             <h3>Estimating</h3>
+             <p>Generate and manage project estimates.</p>
+           </div>
+        </button>
+        <button className="nav-card" onClick={() => onNavigate('pipeline')} data-testid="nav-card-pipeline">
+           <div className="icon-wrapper"><TrendingUpIcon /></div>
+           <div className="nav-card-content">
+             <h3>Pipeline</h3>
+             <p>Track upcoming opportunities and forecast revenue.</p>
+           </div>
+        </button>
+        <button className="nav-card" onClick={() => onNavigate('manager')} data-testid="nav-card-manager">
+           <div className="icon-wrapper"><UsersIcon /></div>
+           <div className="nav-card-content">
+             <h3>Manager Dashboard</h3>
+             <p>Resource allocation and team performance metrics.</p>
+           </div>
+        </button>
+        {isAdmin && <button className="nav-card admin-nav-card" onClick={() => onNavigate('admin')} data-testid="nav-card-admin">
+           <div className="icon-wrapper"><SettingsIcon /></div>
+           <div className="nav-card-content">
+             <h3>Admin</h3>
+             <p>Monitor BQE health, run controlled pulls, and manage dashboard access.</p>
+           </div>
+        </button>}
+      </div>
+    </div>
+  );
+}
+
+function ReportsView({ data, access, view, setView, query, setQuery, pmFilter, setPmFilter, priority, setPriority, selectedCode, setSelectedCode, updateProject, openCard }) {
+  const projects = data?.projects ?? [];
+  const selected = projects.find((project) => project.code === selectedCode) ?? projects[0];
+  const filtered = useMemo(() => projects.filter((project) => {
+    const searchable = `${project.code} ${project.name} ${project.client}`.toLowerCase();
+    return (!query || searchable.includes(query.toLowerCase()))
+      && (pmFilter === "All PMs" || project.pm === pmFilter)
+      && (priority === "All exceptions" || project.priority === priority);
+  }), [projects, query, pmFilter, priority]);
+
+  return (
+    <div className="reports-view fade-in" data-testid="reports-view">
+      <header className="reports-header">
+        <div>
+          <h2>Reports Dashboard</h2>
+          <p className="muted">Day 30 baseline — the dashboard shows what BQE can prove today.</p>
+        </div>
+        <div className="controlled-source">
+          <div className="overline muted">Controlled source</div>
+          <strong>PROJECT_HEALTH_V1</strong>
+          <div className="muted small">BQE extract {data?.extractDate ?? "—"} · PM overlay {data?.overlayUpdated ?? "—"}</div>
+        </div>
+      </header>
+      <nav className="tabs" aria-label="Project health views">
+        {tabs.map(([key, label]) => <button key={key} className={view === key ? "active" : ""} onClick={() => setView(key)} data-testid={`tab-${key}`}>{label}</button>)}
+      </nav>
+      <div className="reports-content pt-6 pb-6">
+        <BqeStatus status={data.bqe} />
+        {view === "exec" && <Executive summary={data.summary} projects={projects} bqe={data.bqe} onOpen={openCard} />}
+        {view === "table" && <ProjectTable projects={filtered} query={query} setQuery={setQuery} pmFilter={pmFilter} setPmFilter={setPmFilter} priority={priority} setPriority={setPriority} onOpen={openCard} />}
+        {view === "card" && <ProjectCard project={selected} projects={projects} onSelect={setSelectedCode} onSave={updateProject} canEdit={Boolean(access?.canEdit)} />}
+        {view === "tuesday" && <TuesdayReview projects={projects} onOpen={openCard} />}
+        {view === "pm" && <PmGuide />}
+        {view === "homes" && <FieldHomes />}
+      </div>
+    </div>
+  );
+}
+
+function ProjectsView({ projects, onOpen }) {
+  const targetCodes = ["23-0091", "23-0147", "24-0022"];
+  const focusedProjects = targetCodes.map(code => projects.find(p => p.code === code)).filter(Boolean);
+
+  return (
+    <div className="content fade-in" data-testid="projects-view">
+      <div className="page-header">
+        <h2>Live Project Tracking</h2>
+        <p className="muted">Focused reconciled records for key active projects.</p>
+      </div>
+
+      {focusedProjects.length > 0 ? (
+        <div className="focused-projects-list">
+          {focusedProjects.map(project => (
+            <Blueprint key={project.code} className="focused-project-card">
+              <div className="focused-project-header">
+                <div>
+                  <h3>{project.code} — {project.name}</h3>
+                  <p className="muted">{project.client} · PM: {project.pm}</p>
+                </div>
+                <button className="secondary" onClick={() => onOpen(project.code)}>View Details</button>
+              </div>
+              <div className="finance-grid compact mt-4">
+                <div className="finance">
+                  <small className="muted">Actual Hours</small>
+                  <strong>{metricValue(project.actualHours)}</strong>
+                </div>
+                <div className="finance">
+                  <small className="muted">Budget Hours</small>
+                  <strong>{metricValue(project.budgetHours)}</strong>
+                </div>
+                <div className="finance">
+                  <small className="muted">Invoiced</small>
+                  <strong>{metricValue(project.invoicedAmount, money)}</strong>
+                </div>
+                <div className="finance">
+                  <small className="muted">Paid</small>
+                  <strong>{metricValue(project.paidAmount, money)}</strong>
+                </div>
+              </div>
+
+              {project.reconciliationHours !== null && (
+                <div className="table-wrap mt-6 pt-6 border-t">
+                  <h4 className="mb-3">2026 Reconciliation</h4>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Metric</th>
+                        <th>Exact project</th>
+                        <th>Parent + child projects</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Hours</td>
+                        <td>{metricValue(project.reconciliationHours)}</td>
+                        <td>{metricValue(project.reconciliationRolledUpHours)}</td>
+                      </tr>
+                      <tr>
+                        <td>Invoiced</td>
+                        <td>{metricValue(project.reconciliationInvoicedAmount, money)}</td>
+                        <td>{metricValue(project.reconciliationRolledUpInvoicedAmount, money)}</td>
+                      </tr>
+                      <tr>
+                        <td>Paid</td>
+                        <td>{metricValue(project.reconciliationPaidAmount, money)}</td>
+                        <td>{metricValue(project.reconciliationRolledUpPaidAmount, money)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Blueprint>
+          ))}
+        </div>
+      ) : (
+        <Blueprint className="empty-state placeholder-panel pt-6 pb-6">
+           <div className="placeholder-icon"><FolderIcon /></div>
+           <h2>No target projects found</h2>
+           <p className="muted">Target projects not found in current payload.</p>
+        </Blueprint>
+      )}
+
+      <Blueprint className="phase2-notice mt-6">
+        <div className="notice-icon"><FolderIcon /></div>
+        <div className="notice-content">
+          <h3>In development — Phase 2</h3>
+          <p className="muted">Comprehensive project management workflows, scheduling integration, and expanded project views are scheduled for Phase 2.</p>
+        </div>
+      </Blueprint>
+    </div>
+  );
+}
+
+function EstimatingView() {
+  const tools = [
+    ["Project Estimator", "Build a structured estimate for a single project and discipline."],
+    ["Multi-Discipline Estimator", "Coordinate scope, effort, and fees across CDI disciplines."],
+    ["Principal’s Worksheet", "Review assumptions, risk, and final pricing before authorization."],
+  ];
+  return (
+    <div className="content fade-in" data-testid="estimating-view">
+      <div className="page-header"><span className="overline">Estimating</span><h2>From opportunity to confident fee</h2><p className="muted">Purpose-built tools for consistent scope and pricing decisions.</p></div>
+      <div className="module-grid">
+        {tools.map(([title, description]) => <Blueprint className="module-card" key={title}><div className="placeholder-icon"><CalculatorIcon /></div><span className="phase2-badge">In development</span><h3>{title}</h3><p className="muted">{description}</p></Blueprint>)}
+      </div>
+    </div>
+  );
+}
+
+function PipelineView() {
+  const stages = ["Lead", "Intake", "Estimate", "Contract", "Project"];
+  return <div className="content fade-in" data-testid="pipeline-view">
+    <div className="page-header"><span className="overline">Pipeline</span><h2>A clear path from lead to project</h2><p className="muted">A shared operating view for business development and project activation.</p></div>
+    <Blueprint className="flow-panel">
+      <div className="pipeline-flow">{stages.map((stage, index) => <React.Fragment key={stage}><div className="flow-stage" data-testid={`pipeline-stage-${stage.toLowerCase()}`}><span>{String(index + 1).padStart(2, "0")}</span><strong>{stage}</strong></div>{index < stages.length - 1 && <i aria-hidden="true">→</i>}</React.Fragment>)}</div>
+      <div className="phase2-badge">In development — Phase 7</div>
+    </Blueprint>
+  </div>;
+}
+
+function ManagerView() {
+  return <div className="content fade-in" data-testid="manager-view">
+    <div className="page-header"><span className="overline">Manager Dashboard</span><h2>Every PM prepared for Tuesday</h2><p className="muted">The future manager view will turn project evidence into a focused coaching and accountability rhythm.</p></div>
+    <div className="module-grid manager-grid">
+      <Blueprint className="module-card"><div className="placeholder-icon"><UsersIcon /></div><h3>Per-PM Tuesday review</h3><p className="muted">A role-focused exception queue for deliverables, blockers, client contact, and owned next actions.</p></Blueprint>
+      <Blueprint className="module-card"><div className="placeholder-icon"><BarChartIcon /></div><h3>Team KPI view</h3><p className="muted">A concise portfolio view of workload, evidence coverage, financial exposure, and follow-through.</p></Blueprint>
+    </div>
+    <div className="phase2-badge">In development</div>
+  </div>;
+}
+
+function AdminView({ dashboard, currentUserId, onDashboardReload }) {
+  const [status, setStatus] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [pulling, setPulling] = useState(false);
+  const loadAdmin = async () => {
+    setLoading(true);
+    setMessage("");
+    try {
+      const [statusResponse, usersResponse] = await Promise.all([
+        fetch("/api/admin/status", { credentials: "include" }),
+        fetch("/api/admin/users", { credentials: "include" }),
+      ]);
+      if (!statusResponse.ok || !usersResponse.ok) throw new Error("Admin data could not be loaded.");
+      const [statusPayload, usersPayload] = await Promise.all([statusResponse.json(), usersResponse.json()]);
+      setStatus(statusPayload);
+      setUsers(usersPayload.users);
+    } catch (caught) {
+      setMessage(caught.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { loadAdmin(); }, []);
+  const runPull = async () => {
+    setPulling(true);
+    setMessage("Running the read-only BQE pull. This can take several minutes.");
+    try {
+      const response = await fetch("/api/bqe/pull", { method: "POST", credentials: "include" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok && response.status !== 207) throw new Error(payload.error ?? "The BQE pull failed.");
+      setMessage(`BQE pull ${payload.status}. Dashboard data has been refreshed.`);
+      await Promise.all([loadAdmin(), onDashboardReload()]);
+    } catch (caught) {
+      setMessage(caught.message);
+    } finally {
+      setPulling(false);
+    }
+  };
+  const updateRole = async (userId, role) => {
+    setMessage("Saving access role…");
+    try {
+      const response = await fetch(`/api/admin/users/${encodeURIComponent(userId)}/role`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: role || null }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error ?? "The user role could not be saved.");
+      setUsers((current) => current.map((user) => user.id === userId ? { ...user, role: payload.role } : user));
+      setMessage("Access role saved.");
+    } catch (caught) {
+      setMessage(caught.message);
+    }
+  };
+  const latestPull = status?.latestPull;
+  const counts = latestPull?.objectCounts ?? dashboard?.bqe?.objectCounts ?? {};
+  return (
+    <div className="content fade-in" data-testid="admin-view">
+      <div className="page-header">
+        <span className="overline">Restricted area</span><h2>Admin controls</h2>
+        <p className="muted">Connection health, controlled data refresh, and invitation-only access.</p>
+      </div>
+      {message && <div className="notice admin-message" role="status" data-testid="status-admin-message">{message}</div>}
+      {loading ? <div className="notice" data-testid="status-admin-loading">Loading protected admin data…</div> : <>
+      <div className="admin-status-grid">
+        <Blueprint className="admin-card"><span className="overline">BQE connection</span><strong data-testid="status-bqe-connection">{status?.connection.configured ? "Connected" : "Needs attention"}</strong><p className="muted">{status?.connection.apiHost ?? "No API endpoint persisted"}</p><small className="muted">Refresh token source: {status?.connection.tokenSource ?? "—"}</small></Blueprint>
+        <Blueprint className="admin-card"><span className="overline">Last token refresh</span><strong data-testid="status-token-refresh">{status?.connection.refreshedAt ? new Date(status.connection.refreshedAt).toLocaleString() : "Not recorded"}</strong><p className="muted">Weekly keepalive {status?.keepalive.enabled ? "enabled" : "disabled"} · every {status?.keepalive.intervalDays ?? "—"} days</p></Blueprint>
+        <Blueprint className="admin-card"><span className="overline">Latest pull</span><strong data-testid="status-latest-pull">{latestPull?.status ?? "No pull"}</strong><p className="muted">{latestPull?.completedAt ? new Date(latestPull.completedAt).toLocaleString() : "No completed timestamp"}</p><button className="primary" onClick={runPull} disabled={pulling} data-testid="button-run-bqe-pull">{pulling ? "Pull in progress…" : "Run BQE pull"}</button></Blueprint>
+      </div>
+      <Blueprint>
+        <div className="section-heading"><div><h3>Latest record counts</h3><p className="muted">Persisted object counts reported by the latest pull.</p></div></div>
+        <div className="record-count-grid">{Object.entries(counts).map(([key, value]) => <div key={key} data-testid={`metric-count-${key}`}><span className="overline">{key}</span><strong>{number.format(value)}</strong></div>)}</div>
+      </Blueprint>
+      <Blueprint>
+        <div className="section-heading"><div><h3>User access</h3><p className="muted">Unapproved users cannot access operations data. Your own admin role is locked here to prevent accidental lockout.</p></div></div>
+        <div className="table-wrap"><table><thead><tr><th>User</th><th>Email</th><th>Dashboard role</th></tr></thead><tbody>{users.map((user) => <tr key={user.id} data-testid={`row-admin-user-${user.id}`}><td><strong>{user.name}</strong>{user.id === currentUserId && <small className="muted">Current user</small>}</td><td>{user.email}</td><td><select value={user.role ?? ""} disabled={user.id === currentUserId} onChange={(event) => updateRole(user.id, event.target.value)} data-testid={`select-user-role-${user.id}`}><option value="">Unapproved</option><option value="viewer">Viewer</option><option value="editor">Editor</option><option value="admin">Admin</option></select></td></tr>)}</tbody></table></div>
+      </Blueprint>
+      </>}
+    </div>
+  );
+}
+
+// App Shell
 function DashboardApp() {
   const [data, setData] = useState(null);
   const [access, setAccess] = useState(null);
+  const [page, setPage] = useState(() => pageFromPath(window.location.pathname));
   const [view, setView] = useState("exec");
   const [query, setQuery] = useState("");
   const [pmFilter, setPmFilter] = useState("All PMs");
@@ -95,17 +425,34 @@ function DashboardApp() {
   };
 
   useEffect(() => { loadDashboard(); }, []);
+  useEffect(() => {
+    const handlePopState = () => setPage(pageFromPath(window.location.pathname));
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+  useEffect(() => {
+    document.title = `${page === "home" ? "Home" : page === "manager" ? "Manager Dashboard" : page[0].toUpperCase() + page.slice(1)} · CDI Operations Hub`;
+    if (access && page === "admin" && !access.isAdmin) {
+      window.history.replaceState({}, "", pathForPage("home"));
+      setPage("home");
+    }
+  }, [access, page]);
 
-  const projects = data?.projects ?? [];
-  const selected = projects.find((project) => project.code === selectedCode) ?? projects[0];
-  const filtered = useMemo(() => projects.filter((project) => {
-    const searchable = `${project.code} ${project.name} ${project.client}`.toLowerCase();
-    return (!query || searchable.includes(query.toLowerCase()))
-      && (pmFilter === "All PMs" || project.pm === pmFilter)
-      && (priority === "All exceptions" || project.priority === priority);
-  }), [projects, query, pmFilter, priority]);
+  const navigate = (nextPage) => {
+    if (!hubPages.has(nextPage)) return;
+    const nextPath = pathForPage(nextPage);
+    if (window.location.pathname !== nextPath) window.history.pushState({}, "", nextPath);
+    setPage(nextPage);
+    document.querySelector(".hub-main")?.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
-  const openCard = (code) => { setSelectedCode(code); setView("card"); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const openCard = (code) => {
+    setSelectedCode(code);
+    navigate("reports");
+    setView("card");
+    document.querySelector('.hub-main')?.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const updateProject = async (code, update) => {
     const response = await fetch(`/api/projects/${encodeURIComponent(code)}`, {
       method: "PATCH",
@@ -118,35 +465,45 @@ function DashboardApp() {
     setData((current) => ({ ...current, overlayUpdated: new Date().toISOString().slice(0, 10), projects: current.projects.map((project) => project.code === updated.code ? updated : project) }));
   };
 
-  return <div className="app-shell">
-    <header className="site-header">
-      <div>
-        <div className="brand"><span className="brand-mark"><span /></span><span>Complete Design, Inc.</span></div>
-        <h1>Project Health Dashboard <b>v1</b></h1>
-        <p className="muted intro">Day 30 baseline — the dashboard shows what BQE can prove today and makes missing controls visible. Unknown is a valid result until project planning data is established.</p>
-      </div>
-      <div className="controlled-source">
-        <div className="overline muted">Controlled source</div>
-        <strong>PROJECT_HEALTH_V1</strong>
-        <div className="muted">Active + on-hold external roots, plus closed with open AR</div>
-        <div className="muted small">BQE extract {data?.extractDate ?? "—"} · PM overlay {data?.overlayUpdated ?? "—"}</div>
-        <AccountActions />
-      </div>
-    </header>
-    <nav className="tabs" aria-label="Project health views">
-      {tabs.map(([key, label]) => <button key={key} className={view === key ? "active" : ""} onClick={() => setView(key)}>{label}</button>)}
-    </nav>
-    {error ? <div className="notice error">{error} <button onClick={loadDashboard}>Try again</button></div> : !data ? <div className="notice">Loading live BQE hours and financials…</div> : <>
-      <BqeStatus status={data.bqe} />
-      {view === "exec" && <Executive summary={data.summary} projects={projects} bqe={data.bqe} onOpen={openCard} />}
-      {view === "table" && <ProjectTable projects={filtered} query={query} setQuery={setQuery} pmFilter={pmFilter} setPmFilter={setPmFilter} priority={priority} setPriority={setPriority} onOpen={openCard} />}
-      {view === "card" && <ProjectCard project={selected} projects={projects} onSelect={setSelectedCode} onSave={updateProject} canEdit={Boolean(access?.canEdit)} />}
-      {view === "tuesday" && <TuesdayReview projects={projects} onOpen={openCard} />}
-      {view === "pm" && <PmGuide />}
-      {view === "homes" && <FieldHomes />}
-    </>}
-    <footer>Complete Design, Inc. · Project Health Dashboard v1 · Design and visualization of the controlled Day 30 source (PROJECT_HEALTH_V1). No project health status has been invented; Unknown and blank PM-judgment fields are intentional.</footer>
-  </div>;
+  return (
+    <div className="hub-layout">
+      <aside className="hub-sidebar">
+        <div className="hub-brand">
+          <span className="brand-mark"><span /></span>
+          <span className="brand-text">CDI Operations Hub</span>
+        </div>
+        <nav className="hub-nav">
+          <button className={page === 'home' ? 'active' : ''} onClick={() => navigate('home')} data-testid="sidebar-home"><HomeIcon /> Home</button>
+          <button className={page === 'reports' ? 'active' : ''} onClick={() => navigate('reports')} data-testid="sidebar-reports"><BarChartIcon /> Reports</button>
+          <button className={page === 'projects' ? 'active' : ''} onClick={() => navigate('projects')} data-testid="sidebar-projects"><FolderIcon /> Projects</button>
+          <button className={page === 'estimating' ? 'active' : ''} onClick={() => navigate('estimating')} data-testid="sidebar-estimating"><CalculatorIcon /> Estimating</button>
+          <button className={page === 'pipeline' ? 'active' : ''} onClick={() => navigate('pipeline')} data-testid="sidebar-pipeline"><TrendingUpIcon /> Pipeline</button>
+          <button className={page === 'manager' ? 'active' : ''} onClick={() => navigate('manager')} data-testid="sidebar-manager"><UsersIcon /> Manager Dashboard</button>
+          {access?.isAdmin && <button className={page === 'admin' ? 'active' : ''} onClick={() => navigate('admin')} data-testid="sidebar-admin"><SettingsIcon /> Admin</button>}
+        </nav>
+        <div className="hub-user">
+           <AccountActions />
+        </div>
+      </aside>
+      <main className="hub-main">
+         {error ? (
+           <div className="notice error fade-in">{error} <button onClick={loadDashboard}>Try again</button></div>
+         ) : !data ? (
+           <div className="notice loading-notice fade-in">Loading operations data...</div>
+         ) : (
+           <>
+              {page === 'home' && <HomeView onNavigate={navigate} isAdmin={access?.isAdmin} />}
+             {page === 'reports' && <ReportsView data={data} access={access} view={view} setView={setView} query={query} setQuery={setQuery} pmFilter={pmFilter} setPmFilter={setPmFilter} priority={priority} setPriority={setPriority} selectedCode={selectedCode} setSelectedCode={setSelectedCode} updateProject={updateProject} openCard={openCard} />}
+             {page === 'projects' && <ProjectsView projects={data.projects} onOpen={openCard} />}
+              {page === 'estimating' && <EstimatingView />}
+              {page === 'pipeline' && <PipelineView />}
+              {page === 'manager' && <ManagerView />}
+              {page === 'admin' && access?.isAdmin && <AdminView dashboard={data} currentUserId={access.userId} onDashboardReload={loadDashboard} />}
+           </>
+         )}
+      </main>
+    </div>
+  );
 }
 
 function BqeStatus({ status }) {
@@ -254,16 +611,21 @@ function AccountActions() {
 }
 
 function AccessLanding() {
-  return <div className="access-landing">
-    <div className="brand"><span className="brand-mark"><span /></span><span>Complete Design, Inc.</span></div>
-    <Blueprint className="access-card"><span className="overline muted">Controlled source</span><h1>Project Health Dashboard <b>v1</b></h1><p className="muted">This controlled portfolio view contains client, financial, and PM data. Access is invitation-only.</p><div className="access-actions"><a className="primary" href={`${basePath}/sign-in`}>Sign in</a></div></Blueprint>
+  return <div className="access-landing fade-in">
+    <div className="brand"><span className="brand-mark"><span /></span><span className="brand-text">CDI Operations Hub</span></div>
+    <Blueprint className="access-card">
+      <span className="overline muted">Controlled source</span>
+      <h1>Project Health Dashboard <b>v1</b></h1>
+      <p className="muted">This controlled portfolio view contains client, financial, and PM data. Access is invitation-only.</p>
+      <div className="access-actions"><a className="primary" href={`${basePath}/sign-in`} data-testid="link-sign-in">Sign in</a></div>
+    </Blueprint>
   </div>;
 }
 
 function AuthPage({ mode }) {
   const signInPath = `${basePath}/sign-in`;
   const signUpPath = `${basePath}/sign-up`;
-  return <div className="auth-page">{mode === "sign-up"
+  return <div className="auth-page fade-in">{mode === "sign-up"
     ? <SignUp routing="path" path={signUpPath} signInUrl={signInPath} />
     : <SignIn routing="path" path={signInPath} signUpUrl={signUpPath} />}</div>;
 }
