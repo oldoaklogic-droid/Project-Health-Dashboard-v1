@@ -12,6 +12,8 @@ tags:
     description: Health operations
   - name: projects
     description: Project health dashboard data
+  - name: bqe
+    description: Read-only BQE CORE diagnostics
 paths:
   /healthz:
     get:
@@ -58,6 +60,28 @@ paths:
                 $ref: "#/components/schemas/Project"
         "404":
           description: Project not found
+  /bqe/test:
+    get:
+      operationId: testBqeConnection
+      tags: [bqe]
+      summary: Fetch BQE project 23-0091
+      description: Returns the raw read-only BQE CORE project response for project code 23-0091.
+      responses:
+        "200":
+          description: Raw BQE CORE JSON response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          description: Authentication required
+        "403":
+          description: Dashboard access approval required
+        "502":
+          description: BQE request failed
+        "503":
+          description: BQE authorization or configuration requires attention
     patch:
       operationId: updateProject
       tags: [projects]
