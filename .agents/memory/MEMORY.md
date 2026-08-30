@@ -1,1 +1,2 @@
 - [BQE refresh-token ownership](bqe-refresh-token-ownership.md) — after bootstrap, PostgreSQL is the only live token source; the Secrets value is intentionally stale.
+- [Express test logger typing](express-test-logger-typing.md) — narrow request logger stubs to avoid Pino's overloaded Request.log intersection.
