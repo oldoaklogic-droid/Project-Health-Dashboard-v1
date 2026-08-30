@@ -20,7 +20,9 @@ const tabs = [
 ];
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+const number = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 const percent = (value) => `${Math.round(value)}%`;
+const metricValue = (value, formatter = number) => value == null ? "—" : formatter.format(value);
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 const clerkPubKey = publishableKeyFromHost(window.location.hostname, import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
@@ -133,8 +135,9 @@ function DashboardApp() {
     <nav className="tabs" aria-label="Project health views">
       {tabs.map(([key, label]) => <button key={key} className={view === key ? "active" : ""} onClick={() => setView(key)}>{label}</button>)}
     </nav>
-    {error ? <div className="notice error">{error} <button onClick={loadDashboard}>Try again</button></div> : !data ? <div className="notice">Loading controlled source…</div> : <>
-      {view === "exec" && <Executive summary={data.summary} projects={projects} onOpen={openCard} />}
+    {error ? <div className="notice error">{error} <button onClick={loadDashboard}>Try again</button></div> : !data ? <div className="notice">Loading live BQE hours and financials…</div> : <>
+      <BqeStatus status={data.bqe} />
+      {view === "exec" && <Executive summary={data.summary} projects={projects} bqe={data.bqe} onOpen={openCard} />}
       {view === "table" && <ProjectTable projects={filtered} query={query} setQuery={setQuery} pmFilter={pmFilter} setPmFilter={setPmFilter} priority={priority} setPriority={setPriority} onOpen={openCard} />}
       {view === "card" && <ProjectCard project={selected} projects={projects} onSelect={setSelectedCode} onSave={updateProject} canEdit={Boolean(access?.canEdit)} />}
       {view === "tuesday" && <TuesdayReview projects={projects} onOpen={openCard} />}
@@ -145,15 +148,25 @@ function DashboardApp() {
   </div>;
 }
 
-function Executive({ summary, projects, onOpen }) {
+function BqeStatus({ status }) {
+  const copy = {
+    fresh: ["Live BQE data", `${status.matchedProjects} dashboard projects matched to the latest completed pull.`],
+    stale: ["BQE data is stale", "Values remain visible for continuity, but the latest completed pull is more than 24 hours old."],
+    partial: ["Partial BQE pull", "Verified values are shown where available. One or more BQE object types did not refresh."],
+    empty: ["No BQE data yet", "Hours and financials will appear after the first completed BQE pull."],
+  }[status.state];
+  return <div className={`source-status ${status.state}`} role="status"><strong>{copy[0]}</strong><span>{copy[1]}</span>{status.completedAt && <small>Completed {new Date(status.completedAt).toLocaleString()}</small>}</div>;
+}
+
+function Executive({ summary, projects, bqe, onOpen }) {
   const confidence = ["HIGH", "MEDIUM", "LOW"].map((key) => [key[0] + key.slice(1).toLowerCase(), summary.confidence[key] ?? 0]);
   const top = [...projects].sort((a, b) => b.exposure - a.exposure).slice(0, 6);
   return <main className="content">
     <div className="metric-grid">
-      <Metric label="Active external roots" value={summary.activeRoots} note="self / internal excluded" />
-      <Metric label="Named PM" value={percent((summary.namedPm / summary.activeRoots) * 100)} note={`${summary.namedPm} of ${summary.activeRoots} projects`} accent />
-      <Metric label="Financial exposure" value={money.format(summary.financialExposure)} note="open AR + WIP" />
-      <Metric label="Overall health assigned" value={`${summary.overall.GREEN ?? 0}%`} note={`${summary.overall.UNKNOWN ?? summary.activeRoots} Unknown · controls pending`} gray />
+      <Metric label="2026 actual hours" value={metricValue(bqe.reconciliation?.hours ?? bqe.totals.hours)} note="latest BQE reconciliation" accent />
+      <Metric label="BQE budget hours" value={metricValue(bqe.totals.budgetHours)} note="persisted BQE portfolio total" />
+      <Metric label="2026 invoiced" value={metricValue(bqe.reconciliation?.invoicedAmount ?? bqe.totals.invoicedAmount, money)} note="latest BQE reconciliation" />
+      <Metric label="2026 paid" value={metricValue(bqe.reconciliation?.paidAmount ?? bqe.totals.paidAmount, money)} note="latest BQE reconciliation" />
     </div>
     <div className="two-col executive-pair">
       <Blueprint><h2>Overall project health</h2><p className="muted">Counts by assigned Overall status. No Green/Yellow/Red has been invented.</p>
@@ -169,7 +182,7 @@ function Executive({ summary, projects, onOpen }) {
       <div className="coverage-grid">{summary.coverage.map((item) => <div className="coverage" key={item.label}><div><strong>{item.label}</strong><span className="muted">{item.count} / {summary.activeRoots} · {percent(item.pct)}</span></div><div className="track"><span style={{ width: `${item.pct}%` }} /></div><small className="muted">{item.note}</small></div>)}</div>
     </Blueprint>
     <div className="two-col">
-      <Blueprint><h2>Financial attention</h2><div className="finance-grid">{[["Labor WIP", projects.reduce((s, p) => s + p.laborWip, 0)], ["Expense WIP", projects.reduce((s, p) => s + p.expenseWip, 0)], ["Open AR", projects.reduce((s, p) => s + p.openAr, 0)], ["WIP + AR", summary.financialExposure]].map(([label, value]) => <div className="finance" key={label}><small className="muted">{label}</small><strong>{money.format(value)}</strong><span className="muted">portfolio total</span></div>)}</div><p className="muted small top-rule">WIP + AR is exposure to bill and collect, not a loss estimate.</p></Blueprint>
+      <Blueprint><h2>BQE financial reconciliation</h2><div className="finance-grid">{[["Actual hours", metricValue(bqe.reconciliation?.hours ?? bqe.totals.hours)], ["Budget hours", metricValue(bqe.totals.budgetHours)], ["Invoiced", metricValue(bqe.reconciliation?.invoicedAmount ?? bqe.totals.invoicedAmount, money)], ["Paid", metricValue(bqe.reconciliation?.paidAmount ?? bqe.totals.paidAmount, money)]].map(([label, value]) => <div className="finance" key={label}><small className="muted">{label}</small><strong>{value}</strong><span className="muted">{label === "Budget hours" ? "persisted portfolio total" : bqe.reconciliation ? "reconciled 2026 total" : "persisted portfolio total"}</span></div>)}</div><p className="muted small top-rule">Reconciliation totals verify the persisted 2026 pull. Budget hours are summed across persisted BQE budgets because BQE budget rows do not consistently expose a project identifier.</p></Blueprint>
       <Blueprint><h2>Active projects by PM</h2><div className="bars">{Object.entries(summary.byPm).sort((a, b) => b[1] - a[1]).map(([label, count]) => <Bar key={label} label={label} value={count} max={Math.max(...Object.values(summary.byPm))} />)}</div></Blueprint>
     </div>
     <Blueprint><h2>Financial attention queue</h2><p className="muted">Highest WIP + AR projects for project-card review.</p><div className="compact-list">{top.map((project) => <button key={project.code} onClick={() => onOpen(project.code)}><span><b>{project.name}</b><small className="muted">{project.code} · {project.pm}</small></span><strong>{money.format(project.exposure)}</strong></button>)}</div></Blueprint>
@@ -183,7 +196,7 @@ function ProjectTable({ projects, query, setQuery, pmFilter, setPmFilter, priori
   const pms = [...new Set(projects.map((project) => project.pm))];
   return <main className="content"><Blueprint><div className="section-heading"><div><h2>Project table</h2><p className="muted">Filter the active external roots, then open a controlled project card.</p></div><span className="muted">{projects.length} records</span></div>
     <div className="filters"><input value={query} placeholder="Project #, name, client" onChange={(event) => setQuery(event.target.value)} /><select value={pmFilter} onChange={(event) => setPmFilter(event.target.value)}><option>All PMs</option>{pms.map((pm) => <option key={pm}>{pm}</option>)}</select><select value={priority} onChange={(event) => setPriority(event.target.value)}><option>All exceptions</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option></select></div>
-    <div className="table-wrap"><table><thead><tr><th>Project #</th><th>Project</th><th>PM</th><th>Priority</th><th>Exposure</th><th /></tr></thead><tbody>{projects.map((project) => <tr key={project.code}><td>{project.code}</td><td><b>{project.name}</b><small className="muted">{project.client}</small></td><td>{project.pm}</td><td><span className={`badge ${project.priority.toLowerCase()}`}>{project.priority}</span></td><td>{money.format(project.exposure)}</td><td><button className="text-button" onClick={() => onOpen(project.code)}>Card →</button></td></tr>)}</tbody></table></div>
+    <div className="table-wrap"><table><thead><tr><th>Project #</th><th>Project</th><th>PM</th><th>Hours</th><th>Budget</th><th>Invoiced</th><th>Paid</th><th>Source</th><th /></tr></thead><tbody>{projects.map((project) => <tr key={project.code}><td>{project.code}</td><td><b>{project.name}</b><small className="muted">{project.client}</small></td><td>{project.pm}</td><td>{metricValue(project.actualHours)}</td><td>{metricValue(project.budgetHours)}</td><td>{metricValue(project.invoicedAmount, money)}</td><td>{metricValue(project.paidAmount, money)}</td><td><span className={`data-chip ${project.bqeMatched ? "live" : ""}`}>{project.bqeMatched ? "BQE" : "No match"}</span></td><td><button className="text-button" onClick={() => onOpen(project.code)}>Card →</button></td></tr>)}</tbody></table></div>
   </Blueprint></main>;
 }
 
@@ -197,7 +210,7 @@ function ProjectCard({ project, projects, onSelect, onSave, canEdit }) {
   const field = (label, key, type = "text") => <label><span>{label}</span><input disabled={!canEdit} type={type} value={form[key] ?? ""} onChange={(event) => change(key, event.target.value)} /></label>;
   return <main className="content"><Blueprint><div className="section-heading"><div><h2>Project card</h2><p className="muted">The PM-controlled fields below save to the project’s persistent overlay.</p></div><select value={project.code} onChange={(event) => onSelect(event.target.value)}>{projects.map((item) => <option key={item.code} value={item.code}>{item.code} — {item.name}</option>)}</select></div>
     <div className="project-title"><div><span className="overline muted">{project.code} · {project.client}</span><h2>{project.name}</h2><p className="muted">{project.pm} · {project.contractValueVisible ? money.format(project.contractValue) : "Contract value not captured"} · {money.format(project.exposure)} exposure</p></div><span className={`badge ${project.priority.toLowerCase()}`}>{project.priority} priority</span></div>
-    <div className="evidence-grid">{[["BQE budget object", project.budgetExists ? "Captured" : "Not captured"], ["Percent complete", project.pctAvail ? `${project.pctComplete}%` : "Not captured"], ["Due date", project.dueAvail ? project.dueDate : "Not captured"], ["Time activity (90d)", project.recent90 ? "Active" : "No recent hours"], ["Data confidence", project.confidence]].map(([label, value]) => <div key={label}><small className="muted">{label}</small><strong>{value}</strong></div>)}</div>
+    <div className="evidence-grid bqe-evidence">{[["Actual hours", metricValue(project.actualHours)], ["Budget hours", metricValue(project.budgetHours)], ["Invoiced", metricValue(project.invoicedAmount, money)], ["Paid", metricValue(project.paidAmount, money)], ["Reconciled hours", metricValue(project.reconciliationHours)], ["Reconciled invoiced", metricValue(project.reconciliationInvoicedAmount, money)], ["Reconciled paid", metricValue(project.reconciliationPaidAmount, money)], ["BQE source", project.bqeMatched ? "Matched" : "No project match"]].map(([label, value]) => <div key={label}><small className="muted">{label}</small><strong>{value}</strong></div>)}</div>
     <form className="overlay-form" onSubmit={save}><div className="form-heading"><h3>PM control overlay</h3><p className="muted">{canEdit ? "These are the nine fields that have no reliable BQE extract source yet." : "Read-only: editor approval is required to update PM-controlled fields."}</p></div><div className="form-grid">{field("Next deliverable", "deliverable")}{field("Estimated hours remaining", "etcHours", "number")}{field("Scope / authorization note", "scopeNote")}{field("Current blocker", "blocker")}{field("Next action", "nextAction")}{field("Action owner", "owner")}{field("Action due", "actionDue", "date")}{field("Last meaningful client contact", "lastContact", "date")}<label className="check"><input disabled={!canEdit} type="checkbox" checked={Boolean(form.pmUpdate)} onChange={(event) => change("pmUpdate", event.target.checked)} /><span>PM update complete this week</span></label></div><div className="save-row">{canEdit && <button className="primary" type="submit">Save PM update</button>}<span className={status.startsWith("Saved") ? "success" : "muted"}>{status}</span></div></form>
   </Blueprint></main>;
 }

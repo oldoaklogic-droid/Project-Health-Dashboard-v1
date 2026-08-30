@@ -27,6 +27,23 @@ export interface Project {
   expenseWip: number;
   openAr: number;
   exposure: number;
+  bqeMatched: boolean;
+  /** @nullable */
+  bqePulledAt: string | null;
+  /** @nullable */
+  actualHours: number | null;
+  /** @nullable */
+  budgetHours: number | null;
+  /** @nullable */
+  invoicedAmount: number | null;
+  /** @nullable */
+  paidAmount: number | null;
+  /** @nullable */
+  reconciliationHours: number | null;
+  /** @nullable */
+  reconciliationInvoicedAmount: number | null;
+  /** @nullable */
+  reconciliationPaidAmount: number | null;
   deliverable: string;
   /** @nullable */
   etcHours: number | null;

@@ -216,7 +216,7 @@ components:
             - type: "null"
     Project:
       type: object
-      required: [code, name, client, pm, priority, overall, confidence, contractValue, contractValueVisible, budgetExists, pctAvail, pctComplete, dueAvail, dueDate, recent90, laborWip, expenseWip, openAr, exposure, deliverable, etcHours, scopeNote, blocker, nextAction, owner, actionDue, lastContact, pmUpdate]
+      required: [code, name, client, pm, priority, overall, confidence, contractValue, contractValueVisible, budgetExists, pctAvail, pctComplete, dueAvail, dueDate, recent90, laborWip, expenseWip, openAr, exposure, bqeMatched, bqePulledAt, actualHours, budgetHours, invoicedAmount, paidAmount, reconciliationHours, reconciliationInvoicedAmount, reconciliationPaidAmount, deliverable, etcHours, scopeNote, blocker, nextAction, owner, actionDue, lastContact, pmUpdate]
       properties:
         code: { type: string }
         name: { type: string }
@@ -237,6 +237,15 @@ components:
         expenseWip: { type: number }
         openAr: { type: number }
         exposure: { type: number }
+        bqeMatched: { type: boolean }
+        bqePulledAt: { type: ["string", "null"] }
+        actualHours: { type: ["number", "null"] }
+        budgetHours: { type: ["number", "null"] }
+        invoicedAmount: { type: ["number", "null"] }
+        paidAmount: { type: ["number", "null"] }
+        reconciliationHours: { type: ["number", "null"] }
+        reconciliationInvoicedAmount: { type: ["number", "null"] }
+        reconciliationPaidAmount: { type: ["number", "null"] }
         deliverable: { type: string }
         etcHours: { type: ["number", "null"] }
         scopeNote: { type: string }
@@ -287,12 +296,53 @@ components:
           additionalProperties: { type: number }
     Dashboard:
       type: object
-      required: [extractDate, overlayUpdated, summary, projects]
+      required: [extractDate, overlayUpdated, bqe, summary, projects]
       properties:
         extractDate: { type: string }
         overlayUpdated: { type: string }
+        bqe:
+          $ref: "#/components/schemas/DashboardBqeStatus"
         summary: { $ref: "#/components/schemas/DashboardSummary" }
         projects:
           type: array
           items: { $ref: "#/components/schemas/Project" }
+    DashboardBqeTotals:
+      type: object
+      required: [hours, budgetHours, invoicedAmount, paidAmount]
+      properties:
+        hours: { type: number }
+        budgetHours: { type: number }
+        invoicedAmount: { type: number }
+        paidAmount: { type: number }
+    DashboardBqeReconciliation:
+      type: object
+      required: [hours, invoicedAmount, paidAmount]
+      properties:
+        hours: { type: number }
+        invoicedAmount: { type: number }
+        paidAmount: { type: number }
+    DashboardBqeStatus:
+      type: object
+      required: [state, pullStatus, completedAt, matchedProjects, objectCounts, errors, totals, reconciliation]
+      properties:
+        state:
+          type: string
+          enum: [fresh, stale, partial, empty]
+        pullStatus:
+          type: ["string", "null"]
+        completedAt:
+          type: ["string", "null"]
+        matchedProjects: { type: number }
+        objectCounts:
+          type: object
+          additionalProperties: { type: number }
+        errors:
+          type: object
+          additionalProperties: { type: string }
+        totals:
+          $ref: "#/components/schemas/DashboardBqeTotals"
+        reconciliation:
+          oneOf:
+            - $ref: "#/components/schemas/DashboardBqeReconciliation"
+            - type: "null"
 

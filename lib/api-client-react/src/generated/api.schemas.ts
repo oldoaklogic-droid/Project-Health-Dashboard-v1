@@ -78,6 +78,23 @@ export interface Project {
   expenseWip: number;
   openAr: number;
   exposure: number;
+  bqeMatched: boolean;
+  /** @nullable */
+  bqePulledAt: string | null;
+  /** @nullable */
+  actualHours: number | null;
+  /** @nullable */
+  budgetHours: number | null;
+  /** @nullable */
+  invoicedAmount: number | null;
+  /** @nullable */
+  paidAmount: number | null;
+  /** @nullable */
+  reconciliationHours: number | null;
+  /** @nullable */
+  reconciliationInvoicedAmount: number | null;
+  /** @nullable */
+  reconciliationPaidAmount: number | null;
   deliverable: string;
   /** @nullable */
   etcHours: number | null;
@@ -130,9 +147,50 @@ export interface DashboardSummary {
   byPm: DashboardSummaryByPm;
 }
 
+export type DashboardBqeStatusState = typeof DashboardBqeStatusState[keyof typeof DashboardBqeStatusState];
+
+
+export const DashboardBqeStatusState = {
+  fresh: 'fresh',
+  stale: 'stale',
+  partial: 'partial',
+  empty: 'empty',
+} as const;
+
+export interface DashboardBqeTotals {
+  hours: number;
+  budgetHours: number;
+  invoicedAmount: number;
+  paidAmount: number;
+}
+
+export interface DashboardBqeReconciliation {
+  hours: number;
+  invoicedAmount: number;
+  paidAmount: number;
+}
+
+export type DashboardBqeStatusObjectCounts = {[key: string]: number};
+
+export type DashboardBqeStatusErrors = {[key: string]: string};
+
+export interface DashboardBqeStatus {
+  state: DashboardBqeStatusState;
+  /** @nullable */
+  pullStatus: string | null;
+  /** @nullable */
+  completedAt: string | null;
+  matchedProjects: number;
+  objectCounts: DashboardBqeStatusObjectCounts;
+  errors: DashboardBqeStatusErrors;
+  totals: DashboardBqeTotals;
+  reconciliation: DashboardBqeReconciliation | null;
+}
+
 export interface Dashboard {
   extractDate: string;
   overlayUpdated: string;
+  bqe: DashboardBqeStatus;
   summary: DashboardSummary;
   projects: Project[];
 }

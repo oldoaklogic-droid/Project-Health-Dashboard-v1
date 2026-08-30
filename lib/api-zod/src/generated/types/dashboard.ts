@@ -5,12 +5,14 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { DashboardBqeStatus } from './dashboardBqeStatus';
 import type { DashboardSummary } from './dashboardSummary';
 import type { Project } from './project';
 
 export interface Dashboard {
   extractDate: string;
   overlayUpdated: string;
+  bqe: DashboardBqeStatus;
   summary: DashboardSummary;
   projects: Project[];
 }

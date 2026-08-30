@@ -1,6 +1,12 @@
 import { Router, type IRouter } from "express";
-import { asc, eq } from "drizzle-orm";
-import { db, projectsTable, type InsertProject, type Project } from "@workspace/db";
+import { asc, desc, eq, isNotNull, sql } from "drizzle-orm";
+import {
+  bqePullRunsTable,
+  db,
+  projectsTable,
+  type InsertProject,
+  type Project,
+} from "@workspace/db";
 import {
   GetDashboardResponse,
   GetProjectParams,
@@ -13,11 +19,14 @@ import {
   requireDashboardAccess,
   requireDashboardEditor,
 } from "../middlewares/requireDashboardAccess";
+import { getLatestBqeReconciliation } from "../lib/bqePull";
+import { reconciliationForCompletedRun } from "../lib/dashboardBqe";
 
 const router: IRouter = Router();
 router.use(requireDashboardAccess);
 const EXTRACT_DATE = "2026-08-19";
 const OVERLAY_DATE = "2026-08-19";
+const BQE_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 const names = [
   ["26-0078", "Riverview Ranch Lot 15", "Timberwood Homes, LLC"],
@@ -88,27 +97,101 @@ function numberValue(value: string | number | null): number {
   return value == null ? 0 : Number(value);
 }
 
-function toProject(row: Project) {
+type ProjectBqeMetrics = {
+  code: string;
+  bqeName: string | null;
+  bqeClient: string | null;
+  bqeManager: string | null;
+  bqeContractAmount: string | null;
+  bqePulledAt: Date | string | null;
+  actualHours: string | null;
+  budgetHours: string | null;
+  invoicedAmount: string | null;
+  paidAmount: string | null;
+  openInvoiceBalance: string | null;
+};
+
+type EnrichedProject = ReturnType<typeof toProject>;
+type ProjectReconciliation = {
+  hours: number;
+  invoicedAmount: number;
+  paymentsReceived: number;
+};
+type BqePortfolioTotals = {
+  hours: string | null;
+  budgetHours: string | null;
+  invoicedAmount: string | null;
+  paidAmount: string | null;
+};
+
+function nullableNumber(value: string | number | null): number | null {
+  if (value == null) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function timestampString(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  const parsed = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function reconciliationFor(
+  reconciliation: Awaited<ReturnType<typeof getLatestBqeReconciliation>>,
+  code: string,
+): ProjectReconciliation | undefined {
+  return (reconciliation?.perProject as Record<string, ProjectReconciliation> | undefined)?.[
+    code
+  ];
+}
+
+function toProject(
+  row: Project,
+  metrics?: ProjectBqeMetrics,
+  reconciliation?: {
+    hours: number;
+    invoicedAmount: number;
+    paymentsReceived: number;
+  },
+) {
+  const bqePulledAt = timestampString(metrics?.bqePulledAt);
+  const bqeMatched = bqePulledAt !== null;
+  const contractAmount = nullableNumber(metrics?.bqeContractAmount ?? null);
+  const openInvoiceBalance = nullableNumber(metrics?.openInvoiceBalance ?? null);
   return {
     code: row.code,
-    name: row.name,
-    client: row.client,
-    pm: row.pm,
+    name: metrics?.bqeName || row.name,
+    client: metrics?.bqeClient || row.client,
+    pm: metrics?.bqeManager || row.pm,
     priority: row.priority,
     overall: row.overall,
     confidence: row.confidence,
-    contractValue: numberValue(row.contractValue),
-    contractValueVisible: row.contractValueVisible,
-    budgetExists: row.budgetExists,
+    contractValue: contractAmount ?? numberValue(row.contractValue),
+    contractValueVisible: contractAmount !== null || row.contractValueVisible,
+    budgetExists: metrics?.budgetHours != null || row.budgetExists,
     pctAvail: row.pctAvail,
     pctComplete: numberValue(row.pctComplete),
     dueAvail: row.dueAvail,
     dueDate: row.dueDate,
-    recent90: row.recent90,
-    laborWip: numberValue(row.laborWip),
-    expenseWip: numberValue(row.expenseWip),
-    openAr: numberValue(row.openAr),
-    exposure: numberValue(row.exposure),
+    recent90:
+      metrics?.actualHours != null
+        ? Number(metrics.actualHours) > 0
+          ? 1
+          : 0
+        : row.recent90,
+    laborWip: bqeMatched ? 0 : numberValue(row.laborWip),
+    expenseWip: bqeMatched ? 0 : numberValue(row.expenseWip),
+    openAr: openInvoiceBalance ?? numberValue(row.openAr),
+    exposure: openInvoiceBalance ?? numberValue(row.exposure),
+    bqeMatched,
+    bqePulledAt,
+    actualHours: nullableNumber(metrics?.actualHours ?? null),
+    budgetHours: nullableNumber(metrics?.budgetHours ?? null),
+    invoicedAmount: nullableNumber(metrics?.invoicedAmount ?? null),
+    paidAmount: nullableNumber(metrics?.paidAmount ?? null),
+    reconciliationHours: reconciliation?.hours ?? null,
+    reconciliationInvoicedAmount: reconciliation?.invoicedAmount ?? null,
+    reconciliationPaidAmount: reconciliation?.paymentsReceived ?? null,
     deliverable: row.deliverable,
     etcHours: row.etcHours == null ? null : numberValue(row.etcHours),
     scopeNote: row.scopeNote,
@@ -121,7 +204,91 @@ function toProject(row: Project) {
   };
 }
 
-function summarize(rows: Project[]) {
+async function loadProjectBqeMetrics(): Promise<Map<string, ProjectBqeMetrics>> {
+  const result = await db.execute<ProjectBqeMetrics>(sql`
+    WITH latest_bqe_projects AS (
+      SELECT DISTINCT ON (code)
+        record_id,
+        code,
+        name,
+        client,
+        manager,
+        contract_amount,
+        pulled_at
+      FROM bqe_projects
+      WHERE code IS NOT NULL
+      ORDER BY code, pulled_at DESC
+    ),
+    time_by_project AS (
+      SELECT project_id, SUM(hours) AS actual_hours, MAX(pulled_at) AS pulled_at
+      FROM bqe_time_entries
+      GROUP BY project_id
+    ),
+    budget_by_code AS (
+      SELECT COALESCE(project_code, name) AS code, SUM(total_hours) AS budget_hours, MAX(pulled_at) AS pulled_at
+      FROM bqe_budgets
+      WHERE COALESCE(project_code, name) IS NOT NULL
+      GROUP BY COALESCE(project_code, name)
+    ),
+    invoice_by_project AS (
+      SELECT
+        project_id,
+        SUM(amount) AS invoiced_amount,
+        SUM(balance) AS open_invoice_balance,
+        MAX(pulled_at) AS pulled_at
+      FROM bqe_invoices
+      GROUP BY project_id
+    ),
+    payment_by_project AS (
+      SELECT project_id, SUM(amount) AS paid_amount, MAX(pulled_at) AS pulled_at
+      FROM bqe_payments
+      GROUP BY project_id
+    )
+    SELECT
+      hp.code,
+      bp.name AS "bqeName",
+      bp.client AS "bqeClient",
+      bp.manager AS "bqeManager",
+      bp.contract_amount AS "bqeContractAmount",
+      GREATEST(bp.pulled_at, te.pulled_at, budget.pulled_at, invoice.pulled_at, payment.pulled_at) AS "bqePulledAt",
+      CASE WHEN bp.record_id IS NULL THEN NULL ELSE COALESCE(te.actual_hours, 0) END AS "actualHours",
+      budget.budget_hours AS "budgetHours",
+      CASE WHEN bp.record_id IS NULL THEN NULL ELSE COALESCE(invoice.invoiced_amount, 0) END AS "invoicedAmount",
+      CASE WHEN bp.record_id IS NULL THEN NULL ELSE COALESCE(payment.paid_amount, 0) END AS "paidAmount",
+      CASE WHEN bp.record_id IS NULL THEN NULL ELSE COALESCE(invoice.open_invoice_balance, 0) END AS "openInvoiceBalance"
+    FROM health_projects hp
+    LEFT JOIN latest_bqe_projects bp ON bp.code = hp.code
+    LEFT JOIN time_by_project te ON te.project_id = bp.record_id
+    LEFT JOIN budget_by_code budget ON budget.code = hp.code
+    LEFT JOIN invoice_by_project invoice ON invoice.project_id = bp.record_id
+    LEFT JOIN payment_by_project payment ON payment.project_id = bp.record_id
+  `);
+  return new Map(result.rows.map((row) => [row.code, row]));
+}
+
+async function loadBqePortfolioTotals(): Promise<{
+  hours: number;
+  budgetHours: number;
+  invoicedAmount: number;
+  paidAmount: number;
+}> {
+  const result = await db.execute<BqePortfolioTotals>(sql`
+    SELECT
+      (SELECT COALESCE(SUM(hours), 0) FROM bqe_time_entries) AS hours,
+      (SELECT COALESCE(SUM(total_hours), 0) FROM bqe_budgets) AS "budgetHours",
+      (SELECT COALESCE(SUM(amount), 0) FROM bqe_invoices) AS "invoicedAmount",
+      (SELECT COALESCE(SUM(amount), 0) FROM bqe_payments) AS "paidAmount"
+  `);
+  const row = result.rows[0];
+  return {
+    hours: nullableNumber(row?.hours ?? null) ?? 0,
+    budgetHours: nullableNumber(row?.budgetHours ?? null) ?? 0,
+    invoicedAmount: nullableNumber(row?.invoicedAmount ?? null) ?? 0,
+    paidAmount: nullableNumber(row?.paidAmount ?? null) ?? 0,
+  };
+}
+
+function summarize(rows: EnrichedProject[]) {
   const count = rows.length;
   const coverage = [
     ["Project manager", rows.filter((row) => row.pm.trim()).length, "Primary PM field on active root"],
@@ -159,12 +326,61 @@ function summarize(rows: Project[]) {
 
 router.get("/dashboard", async (req, res): Promise<void> => {
   await ensureSeeded();
-  const rows = await db.select().from(projectsTable).orderBy(asc(projectsTable.code));
+  const [rows, bqeMetrics, bqeTotals, latestRuns, reconciliation] = await Promise.all([
+    db.select().from(projectsTable).orderBy(asc(projectsTable.code)),
+    loadProjectBqeMetrics(),
+    loadBqePortfolioTotals(),
+    db
+      .select()
+      .from(bqePullRunsTable)
+      .where(isNotNull(bqePullRunsTable.completedAt))
+      .orderBy(desc(bqePullRunsTable.completedAt))
+      .limit(1),
+    getLatestBqeReconciliation(),
+  ]);
+  const latestRun = latestRuns[0] ?? null;
+  const usableReconciliation = reconciliationForCompletedRun(latestRun, reconciliation);
+  const projects = rows.map((row) =>
+    toProject(
+      row,
+      bqeMetrics.get(row.code),
+      reconciliationFor(usableReconciliation, row.code),
+    ),
+  );
+  const completedAt = latestRun?.completedAt ?? null;
+  const isStale = completedAt
+    ? Date.now() - completedAt.getTime() > BQE_STALE_AFTER_MS
+    : false;
+  const state =
+    !latestRun
+      ? "empty"
+      : latestRun.status !== "completed"
+        ? "partial"
+        : isStale
+          ? "stale"
+          : "fresh";
+  const matchedProjects = projects.filter((project) => project.bqeMatched);
   const payload = {
-    extractDate: EXTRACT_DATE,
+    extractDate: completedAt?.toISOString().slice(0, 10) ?? EXTRACT_DATE,
     overlayUpdated: OVERLAY_DATE,
-    summary: summarize(rows),
-    projects: rows.map(toProject),
+    bqe: {
+      state,
+      pullStatus: latestRun?.status ?? null,
+      completedAt: completedAt?.toISOString() ?? null,
+      matchedProjects: matchedProjects.length,
+      objectCounts: latestRun?.objectCounts ?? {},
+      errors: latestRun?.errors ?? {},
+      totals: bqeTotals,
+      reconciliation: usableReconciliation
+        ? {
+            hours: usableReconciliation.total2026Hours,
+            invoicedAmount: usableReconciliation.total2026InvoicedAmount,
+            paidAmount: usableReconciliation.total2026PaymentsReceived,
+          }
+        : null,
+    },
+    summary: summarize(projects),
+    projects,
   };
   res.json(GetDashboardResponse.parse(payload));
 });
@@ -188,7 +404,29 @@ router.get("/projects/:code", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Project not found" });
     return;
   }
-  res.json(GetProjectResponse.parse(toProject(row)));
+  const [metrics, reconciliation, latestRuns] = await Promise.all([
+    loadProjectBqeMetrics(),
+    getLatestBqeReconciliation(),
+    db
+      .select()
+      .from(bqePullRunsTable)
+      .where(isNotNull(bqePullRunsTable.completedAt))
+      .orderBy(desc(bqePullRunsTable.completedAt))
+      .limit(1),
+  ]);
+  const usableReconciliation = reconciliationForCompletedRun(
+    latestRuns[0] ?? null,
+    reconciliation,
+  );
+  res.json(
+    GetProjectResponse.parse(
+      toProject(
+        row,
+        metrics.get(row.code),
+        reconciliationFor(usableReconciliation, row.code),
+      ),
+    ),
+  );
 });
 
 router.patch("/projects/:code", requireDashboardEditor, async (req, res): Promise<void> => {
@@ -214,7 +452,29 @@ router.patch("/projects/:code", requireDashboardEditor, async (req, res): Promis
     return;
   }
   req.log.info({ code: row.code }, "Updated project PM overlay");
-  res.json(UpdateProjectResponse.parse(toProject(row)));
+  const [metrics, reconciliation, latestRuns] = await Promise.all([
+    loadProjectBqeMetrics(),
+    getLatestBqeReconciliation(),
+    db
+      .select()
+      .from(bqePullRunsTable)
+      .where(isNotNull(bqePullRunsTable.completedAt))
+      .orderBy(desc(bqePullRunsTable.completedAt))
+      .limit(1),
+  ]);
+  const usableReconciliation = reconciliationForCompletedRun(
+    latestRuns[0] ?? null,
+    reconciliation,
+  );
+  res.json(
+    UpdateProjectResponse.parse(
+      toProject(
+        row,
+        metrics.get(row.code),
+        reconciliationFor(usableReconciliation, row.code),
+      ),
+    ),
+  );
 });
 
 export default router;
