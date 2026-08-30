@@ -4,6 +4,7 @@ import {
   ClerkProvider,
   Show,
   SignIn,
+  SignUp,
   useClerk,
   useUser,
 } from "@clerk/react";
@@ -241,14 +242,18 @@ function AccessLanding() {
   </div>;
 }
 
-function AuthPage() {
+function AuthPage({ mode }) {
   const signInPath = `${basePath}/sign-in`;
-  return <div className="auth-page"><SignIn routing="path" path={signInPath} /></div>;
+  const signUpPath = `${basePath}/sign-up`;
+  return <div className="auth-page">{mode === "sign-up"
+    ? <SignUp routing="path" path={signUpPath} signInUrl={signInPath} />
+    : <SignIn routing="path" path={signInPath} signUpUrl={signUpPath} />}</div>;
 }
 
 function AppRouter() {
   const path = window.location.pathname;
-  if (path.startsWith(`${basePath}/sign-in`)) return <AuthPage />;
+  if (path.startsWith(`${basePath}/sign-in`)) return <AuthPage mode="sign-in" />;
+  if (path.startsWith(`${basePath}/sign-up`)) return <AuthPage mode="sign-up" />;
   return <><Show when="signed-in"><DashboardApp /></Show><Show when="signed-out"><AccessLanding /></Show></>;
 }
 
@@ -259,6 +264,7 @@ function App() {
     proxyUrl={clerkProxyUrl}
     appearance={clerkAppearance}
     signInUrl={`${basePath}/sign-in`}
+    signUpUrl={`${basePath}/sign-up`}
   ><AppRouter /></ClerkProvider>;
 }
 
