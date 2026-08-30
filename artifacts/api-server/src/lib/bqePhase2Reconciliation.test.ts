@@ -3,6 +3,8 @@ import test from "node:test";
 import {
   classifyProjects,
   buildPhase2Diagnostics,
+  customFieldDisplayValue,
+  assertPhase2ControlledUniverse,
   nonProjectBucket,
   normalizedProjectStatus,
   reconciliationControls,
@@ -62,6 +64,28 @@ test("diagnostics use only dispositions, dedupe custom rows, scan code, and emit
   assert.equal(diagnostics.filter((row) => row.diagnosticKind === "text_hint").length, 7);
   assert.equal(diagnostics.find((row) => row.fieldLabel === "Short Plat / SP")?.projectCount, 1);
   assert.equal(diagnostics.find((row) => row.fieldLabel === "ALTA")?.projectCount, 0);
+});
+
+test("custom field description is the mapping and diagnostic display value, with value fallback", () => {
+  assert.equal(
+    customFieldDisplayValue({ value: "E270-OPAQUE-GUID", description: " Subdivision " }),
+    "Subdivision",
+  );
+  assert.equal(customFieldDisplayValue({ value: "E270-OPAQUE-GUID", description: " " }), "E270-OPAQUE-GUID");
+  const diagnostics = buildPhase2Diagnostics(
+    [{ id: "p", code: "P", name: "Project", type: null, projectClass: null, sourceValue: null, status: "open" }],
+    [{ projectId: "p", projectCode: "P", projectName: "Project", projectType: null, status: "open", fingerprintKey: null, disposition: "excluded", failedRules: ["I-2"], hours: 1 }],
+    [{ projectId: "p", customFieldId: "type", label: "Project Type", value: "E270-OPAQUE-GUID", description: "Subdivision" }],
+  );
+  assert.equal(diagnostics.find((row) => row.diagnosticKind === "custom_field")?.value, "Subdivision");
+});
+
+test("D-1 requires its fixed 315-project controlled universe independent of hours", () => {
+  assert.doesNotThrow(() => assertPhase2ControlledUniverse(315));
+  assert.throws(
+    () => assertPhase2ControlledUniverse(314),
+    /exactly 315 non-project controlled projects; found 314/,
+  );
 });
 
 test("fixture bucket patterns and conservative statuses are deterministic", () => {

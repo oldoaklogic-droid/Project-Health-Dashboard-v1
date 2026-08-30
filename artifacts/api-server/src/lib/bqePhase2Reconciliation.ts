@@ -18,8 +18,17 @@ import {
   db,
 } from "@workspace/db";
 import { logger } from "./logger";
+import {
+  NON_PROJECT_BUCKETS,
+  nonProjectBucket,
+  normalizedProjectStatus,
+  type NonProjectBucket,
+} from "./bqeProjectScope";
+
+export { NON_PROJECT_BUCKETS, nonProjectBucket, normalizedProjectStatus } from "./bqeProjectScope";
 
 export const PHASE2_ANCHOR_HOURS = 16556.00;
+export const PHASE2_CONTROLLED_PROJECT_COUNT = 315;
 export const FINGERPRINT_SEEDS = [
   "Short Plat",
   "Boundary Survey",
@@ -29,8 +38,7 @@ export const FINGERPRINT_SEEDS = [
   "Plat (general)",
   "Site Plan",
 ] as const;
-export const NON_PROJECT_BUCKETS = ["Admin", "Overhead", "PTO", "Business Development", "Internal"] as const;
-type Bucket = (typeof NON_PROJECT_BUCKETS)[number];
+type Bucket = NonProjectBucket;
 
 export type MappingSourceKind = "class" | "custom_field" | "name_pattern";
 export type ClassifierProject = { id: string | null; code: string | null; name: string | null; type: string | null; projectClass?: string | null; sourceValue?: string | null; status: string | null };
@@ -42,23 +50,6 @@ export type Disposition = {
   status: string | null; fingerprintKey: string | null; disposition: "cohort_a" | "cohort_b" | "excluded";
   failedRules: string[]; hours: number;
 };
-
-export function nonProjectBucket(code: string | null, name: string | null): Bucket | null {
-  const value = `${code ?? ""} ${name ?? ""}`.toLowerCase();
-  if (/\b(office|admin)\b/.test(value)) return "Admin";
-  if (/\boverhead\b/.test(value)) return "Overhead";
-  if (/\b(pto|paid time off|holiday|vacation|sick)\b/.test(value)) return "PTO";
-  if (/\b(new clients?|business development|business dev|marketing|proposal|sales)\b/.test(value)) return "Business Development";
-  if (/\b(internal|training|company meeting|it)\b/.test(value)) return "Internal";
-  return null;
-}
-
-export function normalizedProjectStatus(status: string | null): "active" | "completed" | null {
-  const value = status?.trim().toLowerCase();
-  if (value === "0" || value === "active" || value === "open" || value === "in progress") return "active";
-  if (value === "2" || value === "completed" || value === "complete" || value === "closed") return "completed";
-  return null;
-}
 
 /** Pure project classifier; non-projects must be removed before calling it. */
 export function classifyProjects(
@@ -113,6 +104,15 @@ export function reconciliationControls(values: {
   };
 }
 
+/** D-1's anchor is meaningful only against its fixed, reviewed project universe. */
+export function assertPhase2ControlledUniverse(projectCount: number): void {
+  if (projectCount !== PHASE2_CONTROLLED_PROJECT_COUNT) {
+    throw new Error(
+      `D-1 requires exactly ${PHASE2_CONTROLLED_PROJECT_COUNT} non-project controlled projects; found ${projectCount}.`,
+    );
+  }
+}
+
 export type Phase2Diagnostic = {
   diagnosticKind: "class" | "custom_field" | "text_hint";
   fieldKey: string | null;
@@ -122,11 +122,16 @@ export type Phase2Diagnostic = {
   hours: number;
 };
 
+/** BQE select-list values are often option IDs; description is the selected display label. */
+export function customFieldDisplayValue(field: { description?: string | null; value: string | null }): string {
+  return field.description?.trim() || field.value?.trim() || "(blank)";
+}
+
 /** Builds immutable, source-neutral evidence over the classified project universe. */
 export function buildPhase2Diagnostics(
   projects: ClassifierProject[],
   dispositions: Disposition[],
-  customFields: Array<{ projectId: string | null; customFieldId: string | null; label: string | null; value: string | null }>,
+  customFields: Array<{ projectId: string | null; customFieldId: string | null; label: string | null; value: string | null; description?: string | null }>,
 ): Phase2Diagnostic[] {
   const dispositionByProjectId = new Map(dispositions
     .filter((disposition) => disposition.projectId)
@@ -150,7 +155,7 @@ export function buildPhase2Diagnostics(
     if (!field.projectId || !dispositionByProjectId.has(field.projectId)) continue;
     const fieldKey = field.customFieldId?.trim() || null;
     const label = field.label?.trim() || "(blank)";
-    const value = field.value?.trim() || "(blank)";
+    const value = customFieldDisplayValue(field);
     const key = `${fieldKey ?? ""}\u0000${label}\u0000${value}`;
     const group = customGroups.get(key) ?? { fieldKey, label, value, members: new Set<string>() };
     group.members.add(field.projectId);
@@ -204,6 +209,7 @@ export async function createPhase2Reconciliation(createdBy: string) {
       customFieldId: bqeProjectCustomFieldsTable.customFieldId,
       label: bqeProjectCustomFieldsTable.label,
       value: bqeProjectCustomFieldsTable.value,
+      description: bqeProjectCustomFieldsTable.description,
     }).from(bqeProjectCustomFieldsTable),
     tx.select().from(bqePhase2MappingSourceTable).where(eq(bqePhase2MappingSourceTable.id, 1)).limit(1),
   ]);
@@ -236,8 +242,8 @@ export async function createPhase2Reconciliation(createdBy: string) {
     const values = new Set(customFields
       .filter((field) => field.projectId === project.recordId &&
         (field.customFieldId === sourceFieldKey || field.label === sourceFieldKey))
-      .map((field) => field.value?.trim() ?? "")
-      .filter(Boolean));
+      .map((field) => customFieldDisplayValue(field))
+      .filter((value) => value !== "(blank)"));
     return values.size === 1 ? [...values][0]! : null;
   };
   const allProjectRows: ClassifierProject[] = [...latestProjects.values()].map((p) => ({
@@ -278,7 +284,10 @@ export async function createPhase2Reconciliation(createdBy: string) {
     buckets.get(bucket)!.projects.add(p?.id ?? p?.code ?? e.projectId ?? e.projectCode ?? "unknown");
     return false;
   });
-  const dispositions = classifyProjects(projectRows.filter((p) => !nonProjectBucket(p.code, p.name)), projectEntries, map, activityCodes);
+   const controlledProjects = projectRows.filter((project) => !nonProjectBucket(project.code, project.name));
+   assertPhase2ControlledUniverse(controlledProjects.length);
+   const dispositions = classifyProjects(controlledProjects, projectEntries, map, activityCodes);
+   assertPhase2ControlledUniverse(dispositions.length);
   const population = round(dispositions.filter((d) => d.disposition !== "excluded").reduce((n, d) => n + d.hours, 0));
   const exclusions = round(dispositions.filter((d) => d.disposition === "excluded").reduce((n, d) => n + d.hours, 0));
   const nonProject = round([...buckets.values()].reduce((n, b) => n + b.hours, 0));
@@ -309,7 +318,7 @@ export async function createPhase2Reconciliation(createdBy: string) {
     for (const d of dispositions) { const key = d.mappingSourceValue ?? "(blank)"; const old = subtotals.get(key) ?? { hours: 0, count: 0, fingerprint: d.fingerprintKey, mapped: !!map.get(key)?.active }; old.hours += d.hours; old.count += 1; subtotals.set(key, old); }
     if (subtotals.size) await tx.insert(bqePhase2TypeSubtotalsTable).values([...subtotals.entries()].map(([bqeProjectType, s]) => ({ id: randomUUID(), runId: snapshotRunId, bqeProjectType: bqeProjectType === "(blank)" ? null : bqeProjectType, fingerprintKey: s.fingerprint, mapped: s.mapped, hours: String(round(s.hours)), projectCount: s.count })));
     const diagnostics = buildPhase2Diagnostics(
-      projectRows.filter((project) => !nonProjectBucket(project.code, project.name)),
+      controlledProjects,
       dispositions,
       customFields,
     );

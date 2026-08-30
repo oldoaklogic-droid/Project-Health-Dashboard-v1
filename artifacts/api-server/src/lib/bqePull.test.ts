@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import {
+  assertControlledHourBearingProjects,
+  batchBqeEnrichmentIds,
+  deriveBqeEnrichmentScope,
   fetchBqeRecordsForObject,
   reconcileBqeRecords,
+  validateScopedClassRecords,
   type BqeReconciliationSummary,
 } from "./bqePull";
 import {
@@ -159,20 +163,70 @@ describe("BQE pull fixtures", () => {
     assert.ok(requests.every((request) => request.method === "GET"));
   });
 
-  it("uses the read-only customfieldvalue endpoint and requests source evidence fields", async () => {
+  it("uses the read-only scoped customfieldvalue endpoint and requests source evidence fields", async () => {
     let request: { url: URL; method: string | undefined } | null = null;
     globalThis.fetch = async (input, init) => {
       request = { url: new URL(input.toString()), method: init?.method };
       return jsonResponse(200, { data: [] });
     };
-    await fetchBqeRecordsForObject(connection, "customfieldvalue");
+    await fetchBqeRecordsForObject(connection, "customfieldvalue", "entityId = 'project-1'");
     assert.ok(request);
     const captured = request as { url: URL; method: string | undefined };
     assert.equal(captured.method, "GET");
+    assert.equal(captured.url.searchParams.get("where"), "entityId = 'project-1'");
     const fields = captured.url.searchParams.get("fields")?.split(",") ?? [];
     for (const field of ["id", "customFieldId", "entityId", "entityType", "value", "description", "label", "type"]) {
       assert.ok(fields.includes(field));
     }
+  });
+
+  it("builds the enrichment union from hour-bearing and active non-project-filtered projects", () => {
+    const scope = deriveBqeEnrichmentScope(
+      [
+        { id: "hour-only", status: "completed", code: "H" },
+        { id: "active-only", status: "open", code: "A" },
+        { id: "overlap", status: "active", code: "O" },
+        { id: "office", status: "active", code: "OFFICE" },
+      ],
+      [
+        { id: "te-1", projectId: "hour-only", actualHours: 1 },
+        { id: "te-2", projectId: "overlap", actualHours: 2 },
+        { id: "te-3", projectId: "office", actualHours: 3 },
+      ],
+    );
+    assert.deepEqual([...scope.controlledIds].sort(), ["hour-only", "overlap"]);
+    assert.deepEqual([...scope.activeIds].sort(), ["active-only", "office", "overlap"]);
+    assert.deepEqual([...scope.eligibleIds].sort(), ["active-only", "hour-only", "office", "overlap"]);
+  });
+
+  it("requires the reviewed 315-project controlled set before enrichment", () => {
+    assert.throws(() => assertControlledHourBearingProjects(new Set(["only-one"])), /expected 315/);
+    assert.doesNotThrow(() =>
+      assertControlledHourBearingProjects(new Set(Array.from({ length: 315 }, (_, index) => `${index}`))),
+    );
+  });
+
+  it("batches scoped enrichment IDs at twenty and never creates an empty batch", () => {
+    const batches = batchBqeEnrichmentIds(Array.from({ length: 41 }, (_, index) => `project-${index}`));
+    assert.deepEqual(batches.map((batch) => batch.length), [20, 20, 1]);
+    assert.deepEqual(batchBqeEnrichmentIds([]), []);
+  });
+
+  it("rejects out-of-scope or incomplete class evidence before persistence", () => {
+    const eligible = new Set(["project-a", "project-b"]);
+    assert.throws(
+      () => validateScopedClassRecords([{ id: "project-a" }, { id: "other" }], eligible),
+      /ineligible/,
+    );
+    assert.throws(
+      () => validateScopedClassRecords([{ id: "project-a" }], eligible),
+      /missing 1/,
+    );
+    assert.deepEqual(
+      validateScopedClassRecords([{ id: "project-a" }, { id: "project-a" }, { id: "project-b" }], eligible)
+        .map((record) => record.id),
+      ["project-a", "project-b"],
+    );
   });
 
   it("stops when pagination repeats the same non-empty page", async () => {

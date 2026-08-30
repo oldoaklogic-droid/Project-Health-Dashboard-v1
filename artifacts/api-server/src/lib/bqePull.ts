@@ -18,6 +18,7 @@ import {
   type BqeAccessToken,
 } from "./bqe";
 import { logger } from "./logger";
+import { nonProjectBucket, normalizedProjectStatus } from "./bqeProjectScope";
 
 const PAGE_SIZE = 100;
 const FIRST_PAGE = 1;
@@ -28,6 +29,8 @@ const REPORTING_YEAR = 2026;
 const YEAR_START = "2026-01-01";
 const YEAR_END = "2027-01-01";
 const PROJECT_CODES = ["23-0091", "23-0147", "24-0022"] as const;
+const CONTROLLED_HOUR_BEARING_PROJECT_COUNT = 315;
+const ENRICHMENT_BATCH_SIZE = 20;
 
 export const BQE_OBJECT_TYPES = [
   "project",
@@ -122,8 +125,6 @@ const FIELD_CONFIG: Record<BqeObjectType, FieldConfig> = {
       "parentId",
       "rootProjectId",
       "type",
-      "class",
-      "classId",
     ],
     dateFilter: false,
   },
@@ -428,6 +429,7 @@ async function fetchBqePage(
   config: FieldConfig,
   page: number,
   fields: string[],
+  explicitWhere?: string,
 ): Promise<BqeRecord[]> {
   await rateLimiter.acquire();
   const url = new URL(
@@ -437,10 +439,21 @@ async function fetchBqePage(
   if (fields.length > 0) {
     url.searchParams.set("fields", fields.join(","));
   }
-  if (config.dateFilter) {
+  if (explicitWhere?.includes(";")) {
+    throw new Error(`BQE ${config.endpoint} received an unsafe where predicate.`);
+  }
+  if (config.dateFilter && explicitWhere && /\bdate\b/i.test(explicitWhere)) {
+    throw new Error(`BQE ${config.endpoint} where predicate conflicts with its date filter.`);
+  }
+  const dateWhere = config.dateFilter
+    ? `date >= '${YEAR_START}T00:00:00' AND date < '${YEAR_END}T00:00:00'`
+    : null;
+  if (dateWhere || explicitWhere) {
     url.searchParams.set(
       "where",
-      `date >= '${YEAR_START}T00:00:00' AND date < '${YEAR_END}T00:00:00'`,
+      dateWhere && explicitWhere
+        ? `(${dateWhere}) AND (${explicitWhere})`
+        : dateWhere ?? explicitWhere!,
     );
   }
 
@@ -468,11 +481,11 @@ async function fetchBqePage(
     const left = await fetchBqePage(connection, config, page, [
       "id",
       ...nonIdFields.slice(0, midpoint),
-    ]);
+    ], explicitWhere);
     const right = await fetchBqePage(connection, config, page, [
       "id",
       ...nonIdFields.slice(midpoint),
-    ]);
+    ], explicitWhere);
     return mergePageRecords(config.endpoint, [left, right]);
   }
   if (!response.ok) {
@@ -487,12 +500,15 @@ async function fetchBqePage(
 export async function fetchBqeRecordsForObject(
   connection: BqeAccessToken,
   objectType: BqeObjectType,
+  where?: string,
+  fields?: string[],
 ): Promise<BqeRecord[]> {
   const config = FIELD_CONFIG[objectType];
+  const requestedFields = fields ?? config.fields;
   const records: BqeRecord[] = [];
   const seenPageSignatures = new Set<string>();
   for (let page = FIRST_PAGE; page < FIRST_PAGE + MAX_PAGES_PER_OBJECT; page += 1) {
-    const pageRecords = await fetchBqePage(connection, config, page, config.fields);
+    const pageRecords = await fetchBqePage(connection, config, page, requestedFields, where);
     const signature = createHash("sha256")
       .update(
         pageRecords
@@ -533,13 +549,14 @@ async function upsertRows(
     | typeof bqePaymentsTable
     | typeof bqeProjectCustomFieldsTable,
   rows: Record<string, unknown>[],
+  excludeFromConflictUpdate: string[] = [],
 ): Promise<void> {
   const tableWithRecordId = table as typeof bqeProjectsTable;
   for (let offset = 0; offset < rows.length; offset += 250) {
     const chunk = rows.slice(offset, offset + 250);
     const set = Object.fromEntries(
       Object.keys(chunk[0] ?? {})
-        .filter((key) => key !== "recordId")
+        .filter((key) => key !== "recordId" && !excludeFromConflictUpdate.includes(key))
         .map((key) => {
           const column = (tableWithRecordId as unknown as Record<string, { name: string }>)[key];
           return [key, sql.raw(`excluded."${column.name}"`)];
@@ -577,39 +594,171 @@ async function persistProjects(records: BqeRecord[], pulledAt: Date): Promise<nu
       getValue(record, ["manager", "projectManager", "pm", "manager.name"]),
     ),
   }));
-  await upsertRows(bqeProjectsTable, rows);
+  await upsertRows(bqeProjectsTable, rows, ["projectClass", "projectClassId"]);
   return rows.length;
 }
 
-async function persistProjectCustomFields(
-  records: BqeRecord[],
+export function deriveBqeEnrichmentScope(
+  projects: BqeRecord[],
+  timeEntries: BqeRecord[],
+): { controlledIds: Set<string>; activeIds: Set<string>; eligibleIds: Set<string> } {
+  const projectsById = new Map(
+    projects.map((project) => [recordId(project, "project"), project]),
+  );
+  const projectsByCode = new Map(
+    projects
+      .map((project) => [
+        textValue(getValue(project, ["code", "projectCode", "number"])),
+        project,
+      ] as const)
+      .filter((entry): entry is [string, BqeRecord] => entry[0] !== null),
+  );
+  const controlledProject = (project: BqeRecord) =>
+    !nonProjectBucket(
+      textValue(getValue(project, ["code", "projectCode", "number"])),
+      textValue(getValue(project, ["name", "projectName"])),
+    );
+  const controlledIds = new Set<string>();
+  for (const entry of timeEntries) {
+    const projectId = textValue(getValue(entry, ["projectId", "project.id"]));
+    const projectCode = textValue(getValue(entry, ["projectCode", "project.code", "project.number"]));
+    const project = (projectId ? projectsById.get(projectId) : undefined)
+      ?? (projectCode ? projectsByCode.get(projectCode) : undefined);
+    if (project && controlledProject(project)) controlledIds.add(recordId(project, "project"));
+  }
+  const activeIds = new Set(
+    projects
+      .filter((project) => normalizedProjectStatus(textValue(getValue(project, ["status", "projectStatus"]))) === "active")
+      .map((project) => recordId(project, "project")),
+  );
+  return {
+    controlledIds,
+    activeIds,
+    eligibleIds: new Set([...controlledIds, ...activeIds]),
+  };
+}
+
+export function assertControlledHourBearingProjects(projectIds: Set<string>): void {
+  if (projectIds.size !== CONTROLLED_HOUR_BEARING_PROJECT_COUNT) {
+    throw new Error(`BQE controlled hour-bearing project count was ${projectIds.size}; expected ${CONTROLLED_HOUR_BEARING_PROJECT_COUNT}.`);
+  }
+}
+
+function scopePredicate(field: "id" | "entityId", ids: string[]): string {
+  return ids.map((id) => `${field} = '${id.replace(/'/g, "''")}'`).join(" OR ");
+}
+
+export function batchBqeEnrichmentIds(ids: Iterable<string>): string[][] {
+  const uniqueIds = [...new Set(ids)];
+  return Array.from(
+    { length: Math.ceil(uniqueIds.length / ENRICHMENT_BATCH_SIZE) },
+    (_, index) => uniqueIds.slice(index * ENRICHMENT_BATCH_SIZE, (index + 1) * ENRICHMENT_BATCH_SIZE),
+  );
+}
+
+export function validateScopedClassRecords(records: BqeRecord[], eligibleIds: Set<string>): BqeRecord[] {
+  const recordsById = new Map<string, BqeRecord>();
+  for (const record of records) {
+    const id = recordId(record, "project");
+    if (!eligibleIds.has(id)) throw new Error("BQE project enrichment response contained an ineligible id.");
+    recordsById.set(id, record);
+  }
+  const missing = [...eligibleIds].filter((id) => !recordsById.has(id));
+  if (missing.length > 0) {
+    throw new Error(`BQE project enrichment response was missing ${missing.length} eligible project ids.`);
+  }
+  return [...recordsById.values()];
+}
+
+function customFieldRows(records: BqeRecord[], pulledAt: Date, eligibleIds: Set<string>) {
+  return records.map((record) => {
+    const entityId = textValue(getValue(record, ["entityId", "entity.id", "projectId", "project.id"]));
+    if (!entityId || !eligibleIds.has(entityId)) {
+      throw new Error("BQE customfieldvalue response contained an ineligible entityId.");
+    }
+    const entityType = textValue(getValue(record, ["entityType", "entity.type"]));
+    const normalizedEntityType = entityType?.trim().toLowerCase() ?? "";
+    if (normalizedEntityType && normalizedEntityType !== "project" && normalizedEntityType !== "16") {
+      throw new Error("BQE customfieldvalue response contained a non-project entity type.");
+    }
+    return {
+      recordId: recordId(record, "customfieldvalue"),
+      pulledAt,
+      rawJson: asRawJson(record),
+      projectId: entityId,
+      entityId,
+      customFieldId: textValue(getValue(record, ["customFieldId", "customField.id"])),
+      entityType,
+      label: textValue(getValue(record, ["label", "customField.label", "customField.name"])),
+      value: textValue(getValue(record, ["value"])),
+      description: textValue(getValue(record, ["description"])),
+      fieldType: textValue(getValue(record, ["type", "customField.type"])),
+    };
+  });
+}
+
+async function enrichProjectClassification(
+  connection: BqeAccessToken,
+  projects: BqeRecord[],
+  timeEntries: BqeRecord[],
   pulledAt: Date,
-): Promise<number> {
-  const storedProjects = await db.select({ recordId: bqeProjectsTable.recordId }).from(bqeProjectsTable);
-  const projectIds = new Set(storedProjects.map((project) => project.recordId));
-  const rows = records
-    .filter((record) => {
-      const entityId = textValue(getValue(record, ["entityId", "entity.id", "projectId", "project.id"]));
-      return entityId !== null && projectIds.has(entityId);
-    })
-    .map((record) => {
-      const entityId = textValue(getValue(record, ["entityId", "entity.id", "projectId", "project.id"]));
-      return {
-        recordId: recordId(record, "customfieldvalue"),
-        pulledAt,
-        rawJson: asRawJson(record),
-        projectId: entityId,
-        entityId,
-        customFieldId: textValue(getValue(record, ["customFieldId", "customField.id"])),
-        entityType: textValue(getValue(record, ["entityType", "entity.type"])),
-        label: textValue(getValue(record, ["label", "customField.label", "customField.name"])),
-        value: textValue(getValue(record, ["value"])),
-        description: textValue(getValue(record, ["description"])),
-        fieldType: textValue(getValue(record, ["type", "customField.type"])),
-      };
-    });
-  await upsertRows(bqeProjectCustomFieldsTable, rows);
-  return rows.length;
+): Promise<{ classRows: number; customRows: number; batches: number }> {
+  const { controlledIds, activeIds, eligibleIds } = deriveBqeEnrichmentScope(projects, timeEntries);
+  assertControlledHourBearingProjects(controlledIds);
+  const ids = [...eligibleIds];
+  if (ids.length === 0) {
+    logger.info({ controlled: controlledIds.size, active: activeIds.size, union: 0, classRows: 0, customRows: 0, batches: 0 }, "BQE scoped enrichment completed");
+    return { classRows: 0, customRows: 0, batches: 0 };
+  }
+  const batches = batchBqeEnrichmentIds(ids);
+  const classRecords: BqeRecord[] = [];
+  const customRecords: BqeRecord[] = [];
+  for (const batch of batches) {
+    const [classes, customFields] = await Promise.all([
+      fetchBqeRecordsForObject(
+        connection,
+        "project",
+        scopePredicate("id", batch),
+        ["id", "class", "classId"],
+      ),
+      fetchBqeRecordsForObject(connection, "customfieldvalue", scopePredicate("entityId", batch)),
+    ]);
+    classRecords.push(...classes);
+    customRecords.push(...customFields);
+  }
+  const completeClassRecords = validateScopedClassRecords(classRecords, eligibleIds);
+  const rows = customFieldRows(customRecords, pulledAt, eligibleIds);
+  await db.transaction(async (tx) => {
+    await tx.update(bqeProjectsTable).set({ projectClass: null, projectClassId: null });
+    for (const record of completeClassRecords) {
+      await tx.update(bqeProjectsTable)
+        .set({
+          projectClass: textValue(getValue(record, ["class", "projectClass"])),
+          projectClassId: textValue(getValue(record, ["classId", "class.id", "projectClassId"])),
+        })
+        .where(eq(bqeProjectsTable.recordId, recordId(record, "project")));
+    }
+    await tx.delete(bqeProjectCustomFieldsTable);
+    if (rows.length > 0) {
+      await tx.insert(bqeProjectCustomFieldsTable).values(rows).onConflictDoUpdate({
+        target: bqeProjectCustomFieldsTable.recordId,
+        set: {
+          pulledAt: sql.raw('excluded."pulled_at"'),
+          rawJson: sql.raw('excluded."raw_json"'),
+          projectId: sql.raw('excluded."project_id"'),
+          entityId: sql.raw('excluded."entity_id"'),
+          customFieldId: sql.raw('excluded."custom_field_id"'),
+          entityType: sql.raw('excluded."entity_type"'),
+          label: sql.raw('excluded."label"'),
+          value: sql.raw('excluded."value"'),
+          description: sql.raw('excluded."description"'),
+          fieldType: sql.raw('excluded."field_type"'),
+        },
+      });
+    }
+  });
+  logger.info({ controlled: controlledIds.size, active: activeIds.size, union: ids.length, classRows: completeClassRecords.length, customRows: rows.length, batches: batches.length }, "BQE scoped enrichment completed");
+  return { classRows: completeClassRecords.length, customRows: rows.length, batches: batches.length };
 }
 
 async function persistTimeEntries(records: BqeRecord[], pulledAt: Date): Promise<number> {
@@ -791,7 +940,7 @@ async function persistObjectRecords(
     case "payment":
       return persistPayments(records, pulledAt);
     case "customfieldvalue":
-      return persistProjectCustomFields(records, pulledAt);
+      throw new Error("Custom-field evidence is persisted only by scoped enrichment.");
   }
 }
 
@@ -1250,6 +1399,8 @@ async function executePull(): Promise<BqePullResult> {
 
   if (connection) {
     for (const objectType of BQE_OBJECT_TYPES) {
+      // Project custom fields are enrichment evidence, never a global pull.
+      if (objectType === "customfieldvalue") continue;
       logger.info({ objectType, pullRunId }, "BQE object pull started");
       try {
         const records = await fetchBqeRecordsForObject(connection, objectType);
@@ -1271,6 +1422,22 @@ async function executePull(): Promise<BqePullResult> {
           "BQE object pull failed",
         );
       }
+    }
+    if (!errors.project && !errors.timeentry && pulledRecords.project && pulledRecords.timeentry) {
+      try {
+        const enrichment = await enrichProjectClassification(
+          connection,
+          pulledRecords.project,
+          pulledRecords.timeentry,
+          startedAt,
+        );
+        objectCounts.customfieldvalue = enrichment.customRows;
+      } catch (error) {
+        errors.customfieldvalue = safeErrorMessage(error);
+        logger.error({ pullRunId }, "BQE scoped enrichment failed");
+      }
+    } else {
+      errors.customfieldvalue = "BQE scoped enrichment requires successful project and timeentry pulls.";
     }
   }
 
