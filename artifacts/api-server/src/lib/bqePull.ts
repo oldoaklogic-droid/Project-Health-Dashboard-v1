@@ -432,10 +432,11 @@ async function fetchBqePage(
   return extractRecords(payload);
 }
 
-async function fetchAllBqeRecords(
+export async function fetchBqeRecordsForObject(
   connection: BqeAccessToken,
-  config: FieldConfig,
+  objectType: BqeObjectType,
 ): Promise<BqeRecord[]> {
+  const config = FIELD_CONFIG[objectType];
   const records: BqeRecord[] = [];
   const seenPageSignatures = new Set<string>();
   for (let page = FIRST_PAGE; page < FIRST_PAGE + MAX_PAGES_PER_OBJECT; page += 1) {
@@ -706,12 +707,12 @@ function projectCodeFor(
   return projectCode ?? (projectId ? projectById.get(projectId) ?? null : null);
 }
 
-async function buildReconciliation(
+export function reconcileBqeRecords(
   pullRunId: string,
   completedAt: Date,
   objectCounts: Record<BqeObjectType, number>,
   pulledRecords: Partial<Record<BqeObjectType, BqeRecord[]>>,
-): Promise<BqeReconciliationSummary> {
+): BqeReconciliationSummary {
   const projectById = new Map<string, string>();
   for (const project of pulledRecords.project ?? []) {
     const code = textValue(getValue(project, ["code", "projectCode", "number"]));
@@ -860,30 +861,52 @@ async function buildReconciliation(
     total2026PaymentsReceived,
     perProject,
   };
+  return summary;
+}
+
+async function persistReconciliation(
+  summary: BqeReconciliationSummary,
+  completedAt: Date,
+): Promise<void> {
   await db
     .insert(bqeReconciliationTable)
     .values({
       id: 1,
-      pullRunId,
+      pullRunId: summary.pullRunId,
       completedAt,
-      objectCounts,
-      total2026Hours: String(total2026Hours),
-      total2026InvoicedAmount: String(total2026InvoicedAmount),
-      total2026PaymentsReceived: String(total2026PaymentsReceived),
-      perProject,
+      objectCounts: summary.objectCounts,
+      total2026Hours: String(summary.total2026Hours),
+      total2026InvoicedAmount: String(summary.total2026InvoicedAmount),
+      total2026PaymentsReceived: String(summary.total2026PaymentsReceived),
+      perProject: summary.perProject,
     })
     .onConflictDoUpdate({
       target: bqeReconciliationTable.id,
       set: {
-        pullRunId,
+        pullRunId: summary.pullRunId,
         completedAt,
-        objectCounts,
-        total2026Hours: String(total2026Hours),
-        total2026InvoicedAmount: String(total2026InvoicedAmount),
-        total2026PaymentsReceived: String(total2026PaymentsReceived),
-        perProject,
+        objectCounts: summary.objectCounts,
+        total2026Hours: String(summary.total2026Hours),
+        total2026InvoicedAmount: String(summary.total2026InvoicedAmount),
+        total2026PaymentsReceived: String(summary.total2026PaymentsReceived),
+        perProject: summary.perProject,
       },
     });
+}
+
+async function buildReconciliation(
+  pullRunId: string,
+  completedAt: Date,
+  objectCounts: Record<BqeObjectType, number>,
+  pulledRecords: Partial<Record<BqeObjectType, BqeRecord[]>>,
+): Promise<BqeReconciliationSummary> {
+  const summary = reconcileBqeRecords(
+    pullRunId,
+    completedAt,
+    objectCounts,
+    pulledRecords,
+  );
+  await persistReconciliation(summary, completedAt);
   return summary;
 }
 
@@ -916,7 +939,7 @@ async function executePull(): Promise<BqePullResult> {
     for (const objectType of BQE_OBJECT_TYPES) {
       logger.info({ objectType, pullRunId }, "BQE object pull started");
       try {
-        const records = await fetchAllBqeRecords(connection, FIELD_CONFIG[objectType]);
+        const records = await fetchBqeRecordsForObject(connection, objectType);
         objectCounts[objectType] = await persistObjectRecords(objectType, records, startedAt);
         pulledRecords[objectType] = records;
         logger.info(
