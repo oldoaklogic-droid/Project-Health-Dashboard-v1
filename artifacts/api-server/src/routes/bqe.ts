@@ -21,6 +21,16 @@ import {
 const router: IRouter = Router();
 router.use(requireDashboardAccess);
 
+type DashboardRole = "viewer" | "editor" | "admin";
+
+function getDashboardRole(metadata: Record<string, unknown>): DashboardRole | null {
+  return metadata.dashboardRole === "viewer" ||
+    metadata.dashboardRole === "editor" ||
+    metadata.dashboardRole === "admin"
+    ? metadata.dashboardRole
+    : null;
+}
+
 router.get("/bqe/test", async (req, res): Promise<void> => {
   try {
     const { accessToken, apiBase } = await getBqeAccessToken();
@@ -222,12 +232,7 @@ router.patch("/admin/users/:userId/role", requireDashboardAdmin, async (req, res
     return;
   }
   const user = await clerkClient.users.getUser(userId);
-  const previousRole =
-    user.publicMetadata.dashboardRole === "viewer" ||
-    user.publicMetadata.dashboardRole === "editor" ||
-    user.publicMetadata.dashboardRole === "admin"
-      ? user.publicMetadata.dashboardRole
-      : null;
+  const previousRole = getDashboardRole(user.publicMetadata);
   if (previousRole === requestedRole) {
     res.json({
       id: user.id,
@@ -241,12 +246,7 @@ router.patch("/admin/users/:userId/role", requireDashboardAdmin, async (req, res
       dashboardRole: requestedRole,
     },
   });
-  const updatedRole =
-    updated.publicMetadata.dashboardRole === "viewer" ||
-    updated.publicMetadata.dashboardRole === "editor" ||
-    updated.publicMetadata.dashboardRole === "admin"
-      ? updated.publicMetadata.dashboardRole
-      : null;
+  const updatedRole = getDashboardRole(updated.publicMetadata);
 
   try {
     await db.insert(dashboardAccessChangesTable).values({
@@ -266,10 +266,62 @@ router.patch("/admin/users/:userId/role", requireDashboardAdmin, async (req, res
       },
       "Dashboard role changed but access audit record could not be saved",
     );
-    res.status(500).json({
-      error: "The dashboard role changed, but its access history could not be saved.",
-    });
-    return;
+
+    try {
+      const reverted = await clerkClient.users.updateUserMetadata(userId, {
+        publicMetadata: {
+          ...updated.publicMetadata,
+          dashboardRole: previousRole,
+        },
+      });
+      const revertedRole = getDashboardRole(reverted.publicMetadata);
+      if (revertedRole === previousRole) {
+        req.log.error(
+          {
+            actorUserId: res.locals.userId,
+            targetUserId: userId,
+            previousRole,
+            attemptedRole: updatedRole,
+            auditRecorded: false,
+            roleChangeReverted: true,
+          },
+          "Dashboard role change was reverted after access audit failure",
+        );
+        res.status(503).json({
+          id: userId,
+          role: revertedRole,
+          auditRecorded: false,
+          roleChangeReverted: true,
+          error: "The dashboard role was not changed because its access history could not be saved.",
+        });
+        return;
+      }
+      throw new Error(`Clerk returned role ${String(revertedRole)} while reverting role change.`);
+    } catch (revertError: unknown) {
+      req.log.error(
+        {
+          err: revertError,
+          actorUserId: res.locals.userId,
+          targetUserId: userId,
+          previousRole,
+          currentRole: updatedRole,
+          auditRecorded: false,
+          roleChangeReverted: false,
+          reconciliationRequired: true,
+        },
+        "Dashboard role change could not be reverted after access audit failure",
+      );
+      res.status(500).json({
+        id: updated.id,
+        role: updatedRole,
+        auditRecorded: false,
+        roleChangeReverted: false,
+        reconciliationRequired: true,
+        error:
+          "The dashboard role changed, but its access history could not be saved or reconciled. Manual reconciliation is required.",
+      });
+      return;
+    }
   }
 
   res.json({

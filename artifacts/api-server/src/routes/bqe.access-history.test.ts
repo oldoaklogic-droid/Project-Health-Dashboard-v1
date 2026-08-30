@@ -27,12 +27,15 @@ type LogEntry = {
 
 type TestLogger = {
   warn(context: unknown, message: string): void;
+  error(context: unknown, message: string): void;
 };
 
 const users = new Map<string, TestUser>();
 const accessChanges: AccessChange[] = [];
 const logEntries: LogEntry[] = [];
 let metadataUpdateCount = 0;
+let failAccessChangeInsert = false;
+let failRoleRevert = false;
 
 const accessChangesTable = {
   changedAt: "changedAt",
@@ -63,6 +66,9 @@ const db = {
   insert() {
     return {
       async values(change: Omit<AccessChange, "id" | "changedAt">) {
+        if (failAccessChangeInsert) {
+          throw new Error("The access history database is unavailable.");
+        }
         accessChanges.push({
           ...change,
           id: accessChanges.length + 1,
@@ -93,6 +99,9 @@ mock.module("@clerk/express", {
             throw new Error(`Unknown test user: ${userId}`);
           }
           metadataUpdateCount += 1;
+          if (failRoleRevert && metadataUpdateCount === 2) {
+            throw new Error("Clerk role revert failed.");
+          }
           user.publicMetadata = input.publicMetadata;
           return user;
         },
@@ -156,6 +165,9 @@ app.use((req, _res, next) => {
     warn(context: unknown, message: string) {
       logEntries.push({ level: "warn", context, message });
     },
+    error(context: unknown, message: string) {
+      logEntries.push({ level: "error", context, message });
+    },
   };
   next();
 });
@@ -197,6 +209,8 @@ beforeEach(() => {
   accessChanges.length = 0;
   logEntries.length = 0;
   metadataUpdateCount = 0;
+  failAccessChangeInsert = false;
+  failRoleRevert = false;
 });
 
 async function request(
@@ -254,6 +268,65 @@ describe("dashboard access history routes", () => {
     assert.deepEqual(secondChange.body, { id: "user-target", role: "editor" });
     assert.equal(accessChanges.length, 1);
     assert.equal(metadataUpdateCount, 1);
+  });
+
+  it("reverts the Clerk role when the access history insert fails", async () => {
+    failAccessChangeInsert = true;
+
+    const response = await request("/admin/users/user-target/role", "user-admin", {
+      method: "PATCH",
+      body: JSON.stringify({ role: "editor" }),
+    });
+
+    assert.equal(response.status, 503);
+    assert.deepEqual(response.body, {
+      id: "user-target",
+      role: "viewer",
+      auditRecorded: false,
+      roleChangeReverted: true,
+      error: "The dashboard role was not changed because its access history could not be saved.",
+    });
+    assert.equal(users.get("user-target")?.publicMetadata.dashboardRole, "viewer");
+    assert.equal(accessChanges.length, 0);
+    assert.equal(metadataUpdateCount, 2);
+    assert.ok(
+      logEntries.some(
+        (entry) =>
+          entry.level === "error" &&
+          entry.message === "Dashboard role change was reverted after access audit failure",
+      ),
+    );
+  });
+
+  it("reports reconciliation when the access history insert and role revert both fail", async () => {
+    failAccessChangeInsert = true;
+    failRoleRevert = true;
+
+    const response = await request("/admin/users/user-target/role", "user-admin", {
+      method: "PATCH",
+      body: JSON.stringify({ role: "editor" }),
+    });
+
+    assert.equal(response.status, 500);
+    assert.deepEqual(response.body, {
+      id: "user-target",
+      role: "editor",
+      auditRecorded: false,
+      roleChangeReverted: false,
+      reconciliationRequired: true,
+      error:
+        "The dashboard role changed, but its access history could not be saved or reconciled. Manual reconciliation is required.",
+    });
+    assert.equal(users.get("user-target")?.publicMetadata.dashboardRole, "editor");
+    assert.equal(accessChanges.length, 0);
+    assert.equal(metadataUpdateCount, 2);
+    assert.ok(
+      logEntries.some(
+        (entry) =>
+          entry.level === "error" &&
+          entry.message === "Dashboard role change could not be reverted after access audit failure",
+      ),
+    );
   });
 
   it("rejects administrator self-demotion, warns, and writes no history", async () => {
