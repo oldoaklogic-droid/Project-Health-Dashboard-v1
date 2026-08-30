@@ -24,7 +24,8 @@ export const bqeProjectsTable = pgTable(
     name: text("name"),
     parentId: text("parent_id"),
     rootProjectId: text("root_project_id"),
-    projectType: integer("project_type"),
+    // BQE type values are labels in some tenants; preserve their exact spelling.
+    projectType: text("project_type"),
     client: text("client"),
     status: text("status"),
     contractType: text("contract_type"),
@@ -192,6 +193,97 @@ export const bqeReconciliationTable = pgTable("bqe_reconciliation", {
     >()
     .notNull(),
 });
+
+/**
+ * Phase 2 is deliberately kept separate from the Phase 1 reconciliation.
+ * A mapping is an operator controlled, case-sensitive BQE type value, rather
+ * than a numeric enum: BQE installations do not share a type catalogue.
+ */
+export const bqeFingerprintKeysTable = pgTable("bqe_fingerprint_keys", {
+  key: text("key").primaryKey(),
+  label: text("label").notNull(),
+  active: boolean("active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull(),
+});
+
+export const bqeProjectTypeMappingsTable = pgTable("bqe_project_type_mappings", {
+  bqeProjectType: text("bqe_project_type").primaryKey(),
+  fingerprintKey: text("fingerprint_key")
+    .notNull()
+    .references(() => bqeFingerprintKeysTable.key),
+  active: boolean("active").notNull().default(true),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const bqePhase2ReconciliationRunsTable = pgTable(
+  "bqe_phase2_reconciliation_runs",
+  {
+    id: text("id").primaryKey(),
+    sourceReconciliationId: integer("source_reconciliation_id")
+      .notNull()
+      .references(() => bqeReconciliationTable.id),
+    sourcePullRunId: text("source_pull_run_id").notNull(),
+    asOfDate: date("as_of_date", { mode: "string" }).notNull(),
+    anchorHours: numeric("anchor_hours").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdBy: text("created_by").notNull(),
+    overallPass: boolean("overall_pass").notNull(),
+    controls: jsonb("controls").$type<Record<string, number>>().notNull(),
+  },
+  (table) => [index("bqe_phase2_runs_created_idx").on(table.createdAt)],
+);
+
+export const bqePhase2ProjectDispositionsTable = pgTable(
+  "bqe_phase2_project_dispositions",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => bqePhase2ReconciliationRunsTable.id),
+    projectId: text("project_id"),
+    projectCode: text("project_code"),
+    projectName: text("project_name"),
+    projectType: text("project_type"),
+    status: text("status"),
+    fingerprintKey: text("fingerprint_key"),
+    disposition: text("disposition").notNull(),
+    failedRules: jsonb("failed_rules").$type<string[]>().notNull(),
+    hours: numeric("hours").notNull(),
+  },
+  (table) => [index("bqe_phase2_dispositions_run_idx").on(table.runId)],
+);
+
+export const bqePhase2NonProjectBucketsTable = pgTable(
+  "bqe_phase2_nonproject_buckets",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => bqePhase2ReconciliationRunsTable.id),
+    bucket: text("bucket").notNull(),
+    hours: numeric("hours").notNull(),
+    projectCount: integer("project_count").notNull(),
+    entryCount: integer("entry_count").notNull(),
+  },
+  (table) => [index("bqe_phase2_buckets_run_idx").on(table.runId)],
+);
+
+export const bqePhase2TypeSubtotalsTable = pgTable(
+  "bqe_phase2_type_subtotals",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => bqePhase2ReconciliationRunsTable.id),
+    bqeProjectType: text("bqe_project_type"),
+    fingerprintKey: text("fingerprint_key"),
+    mapped: boolean("mapped").notNull(),
+    hours: numeric("hours").notNull(),
+    projectCount: integer("project_count").notNull(),
+  },
+  (table) => [index("bqe_phase2_type_subtotals_run_idx").on(table.runId)],
+);
 
 export type BqeProjectRecord = typeof bqeProjectsTable.$inferSelect;
 export type BqeTimeEntryRecord = typeof bqeTimeEntriesTable.$inferSelect;

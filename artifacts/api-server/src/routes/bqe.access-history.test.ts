@@ -122,6 +122,9 @@ mock.module("@clerk/express", {
 mock.module("@workspace/db", {
   namedExports: {
     bqeConnectionTable: {},
+    bqeFingerprintKeysTable: {},
+    bqePhase2ReconciliationRunsTable: {},
+    bqeProjectTypeMappingsTable: {},
     bqePullRunsTable: {},
     dashboardAccessChangesTable: accessChangesTable,
     db,
@@ -152,6 +155,15 @@ mock.module("../lib/bqePull", {
   namedExports: {
     getLatestBqeReconciliation: async () => null,
     runBqePhase1Pull: async () => ({ status: "completed" }),
+  },
+});
+
+mock.module("../lib/bqePhase2Reconciliation", {
+  namedExports: {
+    createPhase2Reconciliation: async () => null,
+    ensureFingerprintSeeds: async () => undefined,
+    getPhase2Run: async () => null,
+    toCsv: () => "",
   },
 });
 

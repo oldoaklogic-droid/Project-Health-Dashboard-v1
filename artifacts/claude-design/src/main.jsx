@@ -331,6 +331,400 @@ function ManagerView() {
   </div>;
 }
 
+function MappingRow({ row, fingerprints, onSave }) {
+  const [key, setKey] = useState(row.fingerprintKey || "");
+  const [active, setActive] = useState(row.active);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setKey(row.fingerprintKey || "");
+    setActive(row.active);
+  }, [row.fingerprintKey, row.active]);
+
+  const isDirty = key !== (row.fingerprintKey || "") || active !== row.active;
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSave(row.projectType, key, active);
+    setSaving(false);
+  };
+
+  return (
+    <tr>
+      <td><strong>{row.projectType}</strong></td>
+      <td>{row.hours > 0 ? `${metricValue(row.hours)} (${metricValue(row.count)})` : "—"}</td>
+      <td>
+        <select value={key} onChange={e => setKey(e.target.value)} disabled={saving} className="mappings-select" aria-label={`Mapping for ${row.projectType}`}>
+          <option value="">Select mapping…</option>
+          {fingerprints.map(f => (
+            <option key={f.key} value={f.key}>{f.key} {f.active ? "" : "(Inactive)"}</option>
+          ))}
+        </select>
+      </td>
+      <td>
+        <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} disabled={saving} aria-label={`Active status for ${row.projectType}`} />
+      </td>
+      <td>
+        {isDirty && (
+          <button className="secondary" style={{padding: "6px 12px"}} onClick={handleSave} disabled={saving || !key}>
+            {saving ? "…" : "Save"}
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function Phase2Admin() {
+  const [data, setData] = useState(null);
+  const [mappingsData, setMappingsData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const loadData = async () => {
+    try {
+      const [recRes, mapRes] = await Promise.all([
+        fetch("/api/admin/phase2/reconciliation", { credentials: "include" }),
+        fetch("/api/admin/phase2/mappings", { credentials: "include" })
+      ]);
+      if (!recRes.ok || !mapRes.ok) throw new Error("Failed to load Phase 2 data");
+
+      setData(await recRes.json());
+      setMappingsData(await mapRes.json());
+      setError("");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadData(); }, []);
+
+  const runReconciliation = async () => {
+    setRunning(true);
+    setMessage("Running D-1 reconciliation. This may take a moment...");
+    setError("");
+    try {
+      const res = await fetch("/api/admin/phase2/reconciliation", { method: "POST", credentials: "include" });
+      if (!res.ok) {
+         const err = await res.json().catch(() => ({}));
+         throw new Error(err.error || "Failed to run reconciliation");
+      }
+      setMessage("Reconciliation complete.");
+      await loadData();
+    } catch (err) {
+      setError(err.message);
+      setMessage("");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const updateMapping = async (bqeProjectType, fingerprintKey, active) => {
+    try {
+       const res = await fetch(`/api/admin/phase2/mappings/${encodeURIComponent(bqeProjectType)}`, {
+         method: "PUT",
+         headers: { "Content-Type": "application/json" },
+         credentials: "include",
+         body: JSON.stringify({ fingerprintKey, active })
+       });
+       if (!res.ok) throw new Error("Failed to update mapping");
+       await loadData();
+       setMessage("Mapping saved successfully.");
+    } catch (err) {
+       setError(err.message);
+    }
+  };
+
+  if (loading && !data) return <Blueprint><div className="notice" data-testid="status-phase2-loading">Loading Phase 2 data…</div></Blueprint>;
+
+  const latest = data?.latest;
+  const runs = data?.runs || [];
+  const mappings = mappingsData?.mappings || [];
+  const fingerprints = mappingsData?.fingerprints || [];
+
+  const allProjectTypes = new Set();
+  mappings.forEach(m => allProjectTypes.add(m.bqeProjectType));
+  (latest?.unmappedTypes || []).forEach(u => allProjectTypes.add(u.projectType));
+
+  const combinedMappings = Array.from(allProjectTypes).map(type => {
+    const mapping = mappings.find(m => m.bqeProjectType === type);
+    const unmappedData = latest?.unmappedTypes?.find(u => u.projectType === type);
+    return {
+      projectType: type,
+      fingerprintKey: mapping?.fingerprintKey || "",
+      active: mapping ? mapping.active : true,
+      hours: unmappedData?.hours || 0,
+      count: unmappedData?.projectCount || 0,
+      isMapped: !!mapping,
+    };
+  }).sort((a, b) => {
+    if (a.isMapped !== b.isMapped) return a.isMapped ? 1 : -1;
+    return b.hours - a.hours;
+  });
+
+  return (
+    <div className="phase2-admin" style={{ marginTop: "48px", display: "flex", flexDirection: "column", gap: "22px" }}>
+      <Blueprint>
+        <div className="section-heading">
+          <div>
+            <h3>Phase 2: D-1 Reconciliation</h3>
+            <p className="muted">Estimator vs Actual data readiness check.</p>
+          </div>
+          <button className="primary" onClick={runReconciliation} disabled={running}>
+            {running ? "Running…" : "Run D-1"}
+          </button>
+        </div>
+        {message && <div className="notice admin-message">{message}</div>}
+        {error && <div className="notice error">{error}</div>}
+
+        {latest ? (
+          <>
+            <div className={`reconciliation-banner ${latest.passed ? "pass" : "fail"}`}>
+              <div>
+                <h3>{latest.passed ? "RECONCILIATION PASSED" : "RECONCILIATION FAILED"}</h3>
+                <p className="muted">As of {new Date(latest.asOfDate).toLocaleString()} · Source Pull: {latest.sourcePullRunId}</p>
+              </div>
+              <div className="banner-actions">
+                 <a href={`/api/admin/phase2/reconciliation/${latest.id}/population.csv`} className="secondary" download>Population CSV</a>
+                 <a href={`/api/admin/phase2/reconciliation/${latest.id}/exclusions.csv`} className="secondary" download>Exclusions CSV</a>
+              </div>
+            </div>
+
+            <div className="two-col mb-3">
+              <div>
+                <h4 className="mb-3">Exact Tie-Out</h4>
+                <div className="table-wrap" style={{marginTop: 0}}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Metric</th>
+                        <th>Expected (Anchor)</th>
+                        <th>Accounted</th>
+                        <th>Difference</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td><strong>Hours</strong></td>
+                        <td>{metricValue(latest.anchorHours)}</td>
+                        <td>{metricValue(latest.accountedHours)}</td>
+                        <td>{metricValue(latest.differenceHours)}</td>
+                      </tr>
+                      <tr>
+                        <td><strong>Projects</strong></td>
+                        <td>{metricValue(latest.projectCountExpected)}</td>
+                        <td>{metricValue(latest.projectCountAccounted)}</td>
+                        <td>{metricValue(latest.projectCountDifference)}</td>
+                      </tr>
+                      <tr>
+                        <td><strong>Type Subtotals</strong></td>
+                        <td>—</td>
+                        <td>—</td>
+                        <td>{metricValue(latest.typeSubtotalDifference)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div>
+                 <h4 className="mb-3">Cohort Metrics</h4>
+                 <div className="metric-grid compact">
+                   <div className="metric">
+                      <span className="overline">Cohort A — Completed</span>
+                     <strong>{metricValue(latest.cohortA?.count)}</strong>
+                     <small className="muted">{metricValue(latest.cohortA?.hours)} hours</small>
+                   </div>
+                   <div className="metric">
+                      <span className="overline">Cohort B — Active</span>
+                     <strong>{metricValue(latest.cohortB?.count)}</strong>
+                     <small className="muted">{metricValue(latest.cohortB?.hours)} hours</small>
+                   </div>
+                 </div>
+
+                 <h4 className="mb-3 mt-6">Non-Project Buckets</h4>
+                 <div className="table-wrap" style={{marginTop: 0}}>
+                   <table>
+                     <thead>
+                       <tr><th>Bucket</th><th>Hours</th><th>Entries</th></tr>
+                     </thead>
+                     <tbody>
+                       {(latest.nonProjectBuckets || []).map(b => (
+                         <tr key={b.bucket}>
+                           <td><strong>{b.bucket}</strong></td>
+                           <td>{metricValue(b.hours)}</td>
+                           <td>{metricValue(b.entryCount)}</td>
+                         </tr>
+                       ))}
+                       {(!latest.nonProjectBuckets || latest.nonProjectBuckets.length === 0) && (
+                         <tr><td colSpan="3" className="muted text-center">No non-project data</td></tr>
+                       )}
+                     </tbody>
+                   </table>
+                 </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="notice">No recent reconciliation runs.</div>
+        )}
+      </Blueprint>
+
+      {latest && (
+        <Blueprint>
+          <div className="section-heading">
+            <div>
+              <h3>Type Subtotals</h3>
+              <p className="muted">Reconciliation across mapped fingerprints.</p>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Project Type</th>
+                  <th>Fingerprint Key</th>
+                  <th>Project Count</th>
+                  <th>Hours</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(latest.typeSubtotals || []).map((ts, i) => (
+                  <tr key={i}>
+                    <td><strong>{ts.projectType}</strong></td>
+                    <td>{ts.fingerprintKey}</td>
+                    <td>{metricValue(ts.projectCount)}</td>
+                    <td>{metricValue(ts.hours)}</td>
+                  </tr>
+                ))}
+                {(!latest.typeSubtotals || latest.typeSubtotals.length === 0) && (
+                  <tr><td colSpan="4" className="muted text-center">No type subtotals available</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Blueprint>
+      )}
+
+      {latest && (
+        <Blueprint>
+          <div className="section-heading">
+            <div>
+              <h3>Exclusions</h3>
+              <p className="muted">Projects omitted from the target cohort due to rule failures.</p>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Project</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Hours</th>
+                  <th>Failed Rules</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(latest.exclusions || []).map(ex => (
+                  <tr key={ex.projectId}>
+                    <td><strong>{ex.projectCode}</strong><small className="muted">{ex.projectName}</small></td>
+                    <td>{ex.projectType}</td>
+                    <td>{ex.status}</td>
+                    <td>{metricValue(ex.hours)}</td>
+                    <td>
+                       <div className="filters compact" style={{marginBottom: 0}}>
+                         {(ex.failedRules || []).map(r => <span key={r} className="badge high">{r}</span>)}
+                       </div>
+                    </td>
+                  </tr>
+                ))}
+                {(!latest.exclusions || latest.exclusions.length === 0) && (
+                  <tr><td colSpan="5" className="muted text-center">No exclusions in the latest run</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Blueprint>
+      )}
+
+      <Blueprint>
+        <div className="section-heading">
+          <div>
+            <h3>Mappings</h3>
+            <p className="muted">Map BQE project types to estimating fingerprints.</p>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Project Type</th>
+                <th>Unmapped Hours (Count)</th>
+                <th>Fingerprint</th>
+                <th>Active</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {combinedMappings.map(row => (
+                <MappingRow key={row.projectType} row={row} fingerprints={fingerprints} onSave={updateMapping} />
+              ))}
+              {combinedMappings.length === 0 && (
+                <tr><td colSpan="5" className="muted text-center">No project types to map</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Blueprint>
+
+      <Blueprint>
+        <div className="section-heading">
+          <div>
+            <h3>Run History</h3>
+            <p className="muted">Previous reconciliation attempts.</p>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Run ID</th>
+                <th>Date</th>
+                <th>Status</th>
+                <th>Expected Hours</th>
+                <th>Difference</th>
+                <th>CSV</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs.map(run => (
+                <tr key={run.id}>
+                  <td><strong>{run.id.slice(0, 8)}</strong></td>
+                  <td>{new Date(run.createdAt).toLocaleString()}</td>
+                    <td><span className={`badge ${run.passed ? "low" : "high"}`}>{run.passed ? "PASS" : "FAIL"}</span></td>
+                  <td>{metricValue(run.anchorHours)}</td>
+                  <td>{metricValue(run.differenceHours)}</td>
+                  <td>
+                    <a href={`/api/admin/phase2/reconciliation/${run.id}/population.csv`} className="text-button" download style={{marginRight: "12px"}}>Pop</a>
+                    <a href={`/api/admin/phase2/reconciliation/${run.id}/exclusions.csv`} className="text-button" download>Exc</a>
+                  </td>
+                </tr>
+              ))}
+              {runs.length === 0 && (
+                <tr><td colSpan="6" className="muted text-center">No run history available</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Blueprint>
+    </div>
+  );
+}
+
 function AdminView({ dashboard, currentUserId, onDashboardReload }) {
   const selfAdminRoleError = "You cannot remove or downgrade your own administrator role.";
   const [status, setStatus] = useState(null);
@@ -430,6 +824,8 @@ function AdminView({ dashboard, currentUserId, onDashboardReload }) {
         <div className="section-heading"><div><h3>User access</h3><p className="muted">Unapproved users cannot access operations data. Your own admin role is locked here to prevent accidental lockout.</p></div></div>
         <div className="table-wrap"><table><thead><tr><th>User</th><th>Email</th><th>Dashboard role</th></tr></thead><tbody>{users.map((user) => <tr key={user.id} data-testid={`row-admin-user-${user.id}`}><td><strong>{user.name}</strong>{user.id === currentUserId && <small className="muted">Current user</small>}</td><td>{user.email}</td><td><select value={user.role ?? ""} disabled={user.id === currentUserId} onChange={(event) => updateRole(user.id, event.target.value)} data-testid={`select-user-role-${user.id}`}><option value="">Unapproved</option><option value="viewer">Viewer</option><option value="editor">Editor</option><option value="admin">Admin</option></select></td></tr>)}</tbody></table></div>
       </Blueprint>
+
+      <Phase2Admin />
       </>}
     </div>
   );

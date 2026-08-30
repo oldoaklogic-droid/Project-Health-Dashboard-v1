@@ -3,6 +3,9 @@ import { clerkClient } from "@clerk/express";
 import { desc, eq } from "drizzle-orm";
 import {
   bqeConnectionTable,
+  bqeFingerprintKeysTable,
+  bqePhase2ReconciliationRunsTable,
+  bqeProjectTypeMappingsTable,
   bqePullRunsTable,
   dashboardAccessChangesTable,
   db,
@@ -17,6 +20,12 @@ import {
   getLatestBqeReconciliation,
   runBqePhase1Pull,
 } from "../lib/bqePull";
+import {
+  createPhase2Reconciliation,
+  ensureFingerprintSeeds,
+  getPhase2Run,
+  toCsv,
+} from "../lib/bqePhase2Reconciliation";
 
 const router: IRouter = Router();
 router.use(requireDashboardAccess);
@@ -102,6 +111,76 @@ router.get("/bqe/reconciliation", async (_req, res): Promise<void> => {
     return;
   }
   res.json(summary);
+});
+
+router.get("/admin/phase2/reconciliation", requireDashboardAdmin, async (_req, res): Promise<void> => {
+  const runs = await db.select().from(bqePhase2ReconciliationRunsTable)
+    .orderBy(desc(bqePhase2ReconciliationRunsTable.createdAt)).limit(25);
+  const latest = runs[0] ? await getPhase2Run(runs[0].id) : null;
+  res.json({
+    latest,
+    runs: await Promise.all(runs.map(async (run) => {
+      const detail = await getPhase2Run(run.id);
+      return {
+        id: run.id,
+        sourcePullRunId: run.sourcePullRunId,
+        asOfDate: run.asOfDate,
+        anchorHours: Number(run.anchorHours),
+        createdAt: run.createdAt.toISOString(),
+        passed: run.overallPass,
+        differenceHours: detail?.differenceHours ?? 0,
+      };
+    })),
+  });
+});
+
+router.post("/admin/phase2/reconciliation", requireDashboardAdmin, async (req, res): Promise<void> => {
+  try {
+    const latest = await createPhase2Reconciliation(res.locals.userId);
+    res.status(201).json(latest);
+  } catch (error: unknown) {
+    req.log.error({ err: error }, "Phase 2 reconciliation failed");
+    res.status(422).json({ error: error instanceof Error ? error.message : "Phase 2 reconciliation failed." });
+  }
+});
+
+router.get("/admin/phase2/mappings", requireDashboardAdmin, async (_req, res): Promise<void> => {
+  await ensureFingerprintSeeds();
+  const [fingerprints, mappings] = await Promise.all([
+    db.select().from(bqeFingerprintKeysTable).orderBy(bqeFingerprintKeysTable.sortOrder),
+    db.select().from(bqeProjectTypeMappingsTable).orderBy(bqeProjectTypeMappingsTable.bqeProjectType),
+  ]);
+  res.json({ fingerprints, mappings: mappings.map((mapping) => ({ ...mapping, updatedAt: mapping.updatedAt.toISOString() })) });
+});
+
+router.put("/admin/phase2/mappings/:bqeProjectType", requireDashboardAdmin, async (req, res): Promise<void> => {
+  const bqeProjectType = Array.isArray(req.params.bqeProjectType) ? req.params.bqeProjectType[0] : req.params.bqeProjectType;
+  const fingerprintKey = req.body?.fingerprintKey;
+  const active = req.body?.active;
+  if (!bqeProjectType || bqeProjectType.trim() !== bqeProjectType || !fingerprintKey || typeof fingerprintKey !== "string" || typeof active !== "boolean") {
+    res.status(400).json({ error: "bqeProjectType, fingerprintKey, and boolean active are required; type spelling is case-sensitive." });
+    return;
+  }
+  await ensureFingerprintSeeds();
+  const fingerprint = await db.select({ key: bqeFingerprintKeysTable.key }).from(bqeFingerprintKeysTable)
+    .where(eq(bqeFingerprintKeysTable.key, fingerprintKey)).limit(1);
+  if (!fingerprint[0]) { res.status(400).json({ error: "fingerprintKey is not a seeded fingerprint." }); return; }
+  const now = new Date();
+  await db.insert(bqeProjectTypeMappingsTable).values({ bqeProjectType, fingerprintKey, active, updatedBy: res.locals.userId, updatedAt: now })
+    .onConflictDoUpdate({ target: bqeProjectTypeMappingsTable.bqeProjectType, set: { fingerprintKey, active, updatedBy: res.locals.userId, updatedAt: now } });
+  res.json({ bqeProjectType, fingerprintKey, active, updatedBy: res.locals.userId, updatedAt: now.toISOString() });
+});
+
+router.get("/admin/phase2/reconciliation/:runId/:report.csv", requireDashboardAdmin, async (req, res): Promise<void> => {
+  const runId = Array.isArray(req.params.runId) ? req.params.runId[0] : req.params.runId;
+  const report = Array.isArray(req.params.report) ? req.params.report[0] : req.params.report;
+  if (report !== "population" && report !== "exclusions") { res.status(404).json({ error: "Unknown Phase 2 CSV report." }); return; }
+  const run = runId ? await getPhase2Run(runId) : null;
+  if (!run) { res.status(404).json({ error: "Phase 2 reconciliation run not found." }); return; }
+  const rows = run.dispositions.filter((item) => report === "population" ? item.disposition !== "excluded" : item.disposition === "excluded")
+    .map((item) => ({ projectCode: item.projectCode, projectName: item.projectName, projectType: item.projectType, status: item.status, fingerprintKey: item.fingerprintKey, disposition: item.disposition, failedRules: item.failedRules.join("|"), hours: item.hours }));
+  const filename = `phase2-${report}-${run.id}.csv`;
+  res.attachment(filename).type("text/csv").send(toCsv(["projectCode", "projectName", "projectType", "status", "fingerprintKey", "disposition", "failedRules", "hours"], rows));
 });
 
 router.get("/admin/status", requireDashboardAdmin, async (_req, res): Promise<void> => {

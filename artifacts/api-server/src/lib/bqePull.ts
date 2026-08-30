@@ -554,7 +554,7 @@ async function persistProjects(records: BqeRecord[], pulledAt: Date): Promise<nu
     name: textValue(getValue(record, ["name", "projectName"])),
     parentId: textValue(getValue(record, ["parentId", "parent.id"])),
     rootProjectId: textValue(getValue(record, ["rootProjectId", "rootProject.id"])),
-    projectType: numberValue(getValue(record, ["type", "projectType"])),
+    projectType: textValue(getValue(record, ["type", "projectType"])),
     client: textValue(getValue(record, ["client", "clientName", "client.name"])),
     status: textValue(getValue(record, ["status", "projectStatus"])),
     contractType: textValue(getValue(record, ["contractType", "contract.type"])),
