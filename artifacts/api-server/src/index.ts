@@ -16,12 +16,33 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, (err) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
-    process.exit(1);
-  }
-
+const server = app.listen(port);
+server.once("listening", () => {
   logger.info({ port }, "Server listening");
   startBqeKeepalive();
 });
+
+server.once("error", (error: NodeJS.ErrnoException) => {
+  logger.error(
+    { code: error.code ?? "UNKNOWN", port },
+    "Server failed to listen",
+  );
+  process.exit(1);
+});
+
+function shutdown(signal: NodeJS.Signals): void {
+  logger.info({ signal }, "Server shutting down");
+  server.close((error) => {
+    if (error) {
+      logger.error(
+        { code: (error as NodeJS.ErrnoException).code ?? "UNKNOWN" },
+        "Server shutdown failed",
+      );
+      process.exit(1);
+    }
+    process.exit(0);
+  });
+}
+
+process.once("SIGTERM", () => shutdown("SIGTERM"));
+process.once("SIGINT", () => shutdown("SIGINT"));
