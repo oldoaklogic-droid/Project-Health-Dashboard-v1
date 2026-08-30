@@ -15,3 +15,4 @@ export * from './dashboardSummaryOverall';
 export * from './healthStatus';
 export * from './project';
 export * from './projectUpdate';
+export * from './testBqeConnection200Item';

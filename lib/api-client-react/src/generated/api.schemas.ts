@@ -89,3 +89,5 @@ export interface Dashboard {
   projects: Project[];
 }
 
+export type TestBqeConnection200Item = { [key: string]: unknown };
+

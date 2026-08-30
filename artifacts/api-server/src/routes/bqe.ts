@@ -5,7 +5,7 @@ import { requireDashboardAccess } from "../middlewares/requireDashboardAccess";
 const router: IRouter = Router();
 router.use(requireDashboardAccess);
 
-router.get("/bqe/test", async (_req, res): Promise<void> => {
+router.get("/bqe/test", async (req, res): Promise<void> => {
   try {
     const { accessToken, apiBase } = await getBqeAccessToken();
     const projectUrl = new URL(
@@ -22,6 +22,10 @@ router.get("/bqe/test", async (_req, res): Promise<void> => {
     const body = await response.text();
 
     if (!response.ok) {
+      req.log.error(
+        { statusCode: response.status },
+        "BQE project request failed",
+      );
       res.status(502).json({
         error: `BQE project request failed with HTTP ${response.status}.`,
       });
@@ -31,12 +35,20 @@ router.get("/bqe/test", async (_req, res): Promise<void> => {
     res.type("application/json").send(body);
   } catch (error: unknown) {
     if (error instanceof BqeConnectionError) {
+      req.log.error(
+        {
+          statusCode: error.statusCode,
+          requiresReauthorization: error.requiresReauthorization,
+        },
+        "BQE connection request failed",
+      );
       res.status(error.statusCode).json({
         error: error.message,
       });
       return;
     }
 
+    req.log.error({ err: error }, "BQE project request failed unexpectedly");
     res.status(502).json({
       error: "BQE project request failed unexpectedly.",
     });

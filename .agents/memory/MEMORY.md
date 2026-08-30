@@ -1,0 +1,1 @@
+- [BQE refresh-token ownership](bqe-refresh-token-ownership.md) — after bootstrap, PostgreSQL is the only live token source; the Secrets value is intentionally stale.

@@ -160,3 +160,11 @@ export const UpdateProjectResponse = zod.object({
 })
 
 
+/**
+ * Returns the raw read-only BQE CORE project response for project code 23-0091.
+ * @summary Fetch BQE project 23-0091
+ */
+export const TestBqeConnectionResponseItem = zod.record(zod.string(), zod.unknown())
+export const TestBqeConnectionResponse = zod.array(TestBqeConnectionResponseItem)
+
+

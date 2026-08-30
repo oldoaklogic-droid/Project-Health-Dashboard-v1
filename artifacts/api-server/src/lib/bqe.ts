@@ -89,7 +89,17 @@ function validEndpoint(value: unknown): value is string {
   }
   try {
     const endpoint = new URL(value);
-    return endpoint.protocol === "https:" || endpoint.protocol === "http:";
+    const path = endpoint.pathname.toLowerCase();
+    return (
+      endpoint.protocol === "https:" &&
+      endpoint.hostname.toLowerCase() === "api.bqecore.com" &&
+      (endpoint.port === "" || endpoint.port === "443") &&
+      endpoint.username === "" &&
+      endpoint.password === "" &&
+      endpoint.search === "" &&
+      endpoint.hash === "" &&
+      (path === "/api" || path.startsWith("/api/"))
+    );
   } catch {
     return false;
   }
@@ -134,87 +144,120 @@ async function getConnectionRow(): Promise<BqeConnection> {
 }
 
 async function refreshBqeAccessToken(): Promise<BqeAccessToken> {
-  const connection = await getConnectionRow();
+  await getConnectionRow();
   const clientId = requiredSecret("BQE_CLIENT_ID");
   const clientSecret = requiredSecret("BQE_CLIENT_SECRET");
+  const refreshed = await db.transaction(async (tx) => {
+    const [connection] = await tx
+      .select()
+      .from(bqeConnectionTable)
+      .where(eq(bqeConnectionTable.id, 1))
+      .for("update");
+    if (!connection) {
+      throw new BqeConnectionError("BQE connection state is unavailable.", {
+        statusCode: 503,
+      });
+    }
 
-  const response = await fetch(BQE_TOKEN_URL, {
-    method: "POST",
-    headers: {
-      "content-type": "application/x-www-form-urlencoded",
-      accept: "application/json",
-    },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: connection.refreshToken,
-      client_id: clientId,
-      client_secret: clientSecret,
-    }),
+    let response: Response;
+    try {
+      response = await fetch(BQE_TOKEN_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          accept: "application/json",
+        },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: connection.refreshToken,
+          client_id: clientId,
+          client_secret: clientSecret,
+        }),
+      });
+    } catch {
+      logger.error("BQE token endpoint could not be reached");
+      throw new BqeConnectionError("BQE token endpoint could not be reached.", {
+        statusCode: 502,
+      });
+    }
+
+    const body = await response.text();
+    const payload = parseTokenResponse(body);
+    const errorCode = readErrorCode(payload);
+
+    if (errorCode === "invalid_grant" || body.includes("invalid_grant")) {
+      reauthorizationRequired = true;
+      logger.error("BQE rejected the refresh token; re-authorization is required");
+      throw reauthorizationError();
+    }
+
+    if (!response.ok) {
+      logger.error({ statusCode: response.status }, "BQE token refresh failed");
+      throw new BqeConnectionError(
+        `BQE token refresh failed with HTTP ${response.status}.`,
+        { statusCode: 502 },
+      );
+    }
+
+    const accessToken =
+      typeof payload.access_token === "string" ? payload.access_token : null;
+    const rotatedRefreshToken =
+      typeof payload.refresh_token === "string" ? payload.refresh_token : null;
+    const expiresIn =
+      typeof payload.expires_in === "number"
+        ? payload.expires_in
+        : typeof payload.expires_in === "string"
+          ? Number(payload.expires_in)
+          : NaN;
+    const apiBase = typeof payload.endpoint === "string" ? payload.endpoint.trim() : "";
+
+    if (
+      !accessToken ||
+      !rotatedRefreshToken ||
+      !Number.isFinite(expiresIn) ||
+      expiresIn <= 0 ||
+      !validEndpoint(apiBase)
+    ) {
+      logger.error("BQE token refresh returned an incomplete response");
+      throw new BqeConnectionError("BQE token refresh returned an invalid response.", {
+        statusCode: 502,
+      });
+    }
+
+    // BQE invalidates connection.refreshToken when it rotates it. Keep the
+    // database row locked and persist the replacement before returning any
+    // value from this transaction.
+    const [persisted] = await tx
+      .update(bqeConnectionTable)
+      .set({
+        refreshToken: rotatedRefreshToken,
+        apiEndpoint: apiBase,
+        refreshedAt: new Date(),
+      })
+      .where(eq(bqeConnectionTable.id, connection.id))
+      .returning({ id: bqeConnectionTable.id });
+    if (!persisted) {
+      throw new BqeConnectionError("The rotated BQE refresh token was not persisted.", {
+        statusCode: 503,
+      });
+    }
+
+    return { accessToken, apiBase, expiresIn };
   });
-  const body = await response.text();
-  const payload = parseTokenResponse(body);
-  const errorCode = readErrorCode(payload);
-
-  if (errorCode === "invalid_grant" || body.includes("invalid_grant")) {
-    reauthorizationRequired = true;
-    logger.error("BQE rejected the refresh token; re-authorization is required");
-    throw reauthorizationError();
-  }
-
-  if (!response.ok) {
-    logger.error({ statusCode: response.status }, "BQE token refresh failed");
-    throw new BqeConnectionError(
-      `BQE token refresh failed with HTTP ${response.status}.`,
-      { statusCode: 502 },
-    );
-  }
-
-  const accessToken =
-    typeof payload.access_token === "string" ? payload.access_token : null;
-  const rotatedRefreshToken =
-    typeof payload.refresh_token === "string" ? payload.refresh_token : null;
-  const expiresIn =
-    typeof payload.expires_in === "number"
-      ? payload.expires_in
-      : typeof payload.expires_in === "string"
-        ? Number(payload.expires_in)
-        : NaN;
-  const apiBase = typeof payload.endpoint === "string" ? payload.endpoint.trim() : "";
-
-  if (
-    !accessToken ||
-    !rotatedRefreshToken ||
-    !Number.isFinite(expiresIn) ||
-    expiresIn <= 0 ||
-    !validEndpoint(apiBase)
-  ) {
-    logger.error("BQE token refresh returned an incomplete response");
-    throw new BqeConnectionError("BQE token refresh returned an invalid response.", {
-      statusCode: 502,
-    });
-  }
-
-  // BQE invalidates connection.refreshToken when it rotates it. Persist the
-  // replacement before caching or using any value from this response.
-  await db
-    .update(bqeConnectionTable)
-    .set({
-      refreshToken: rotatedRefreshToken,
-      apiEndpoint: apiBase,
-      refreshedAt: new Date(),
-    })
-    .where(eq(bqeConnectionTable.id, connection.id));
 
   cachedToken = {
-    accessToken,
-    apiBase,
-    expiresAt: Date.now() + expiresIn * 1000,
+    accessToken: refreshed.accessToken,
+    apiBase: refreshed.apiBase,
+    expiresAt: Date.now() + refreshed.expiresIn * 1000,
   };
   logger.info(
-    { apiBase, expiresIn },
+    { apiBase: refreshed.apiBase, expiresIn: refreshed.expiresIn },
     "BQE access token refreshed; rotated refresh token persisted",
   );
-  return { accessToken, apiBase };
+  return {
+    accessToken: refreshed.accessToken,
+    apiBase: refreshed.apiBase,
+  };
 }
 
 export function getBqeAccessToken(): Promise<BqeAccessToken> {
@@ -245,10 +288,10 @@ export function startBqeKeepalive(): void {
     return;
   }
 
-  keepaliveTimer = setInterval(() => {
+  const runKeepalive = (): void => {
     void getBqeAccessToken()
       .then(() => {
-        logger.info("BQE weekly keepalive completed");
+        logger.info("BQE keepalive completed");
       })
       .catch((error: unknown) => {
         if (error instanceof BqeConnectionError && error.requiresReauthorization) {
@@ -261,7 +304,10 @@ export function startBqeKeepalive(): void {
         }
         logger.error({ err: error }, "BQE weekly keepalive failed");
       });
-  }, BQE_KEEPALIVE_INTERVAL_MS);
+  };
+
+  keepaliveTimer = setInterval(runKeepalive, BQE_KEEPALIVE_INTERVAL_MS);
   keepaliveTimer.unref?.();
   logger.info("BQE weekly keepalive scheduled");
+  runKeepalive();
 }

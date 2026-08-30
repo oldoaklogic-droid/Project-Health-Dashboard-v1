@@ -23,7 +23,8 @@ import type {
   Dashboard,
   HealthStatus,
   Project,
-  ProjectUpdate
+  ProjectUpdate,
+  TestBqeConnection200Item
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -356,4 +357,82 @@ export const useUpdateProject = <TError = ErrorType<void>,
       > => {
       return useMutation(getUpdateProjectMutationOptions(options));
     }
+
+export const getTestBqeConnectionUrl = () => {
+
+
+
+
+  return `/api/bqe/test`
+}
+
+/**
+ * Returns the raw read-only BQE CORE project response for project code 23-0091.
+ * @summary Fetch BQE project 23-0091
+ */
+export const testBqeConnection = async ( options?: Parameters<typeof customFetch>[1]): Promise<TestBqeConnection200Item[]> => {
+
+  return customFetch<TestBqeConnection200Item[]>(getTestBqeConnectionUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getTestBqeConnectionQueryKey = () => {
+    return [
+    `/api/bqe/test`
+    ] as const;
+    }
+
+
+export const getTestBqeConnectionQueryOptions = <TData = Awaited<ReturnType<typeof testBqeConnection>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof testBqeConnection>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getTestBqeConnectionQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof testBqeConnection>>> = ({ signal }) => testBqeConnection({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof testBqeConnection>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type TestBqeConnectionQueryResult = NonNullable<Awaited<ReturnType<typeof testBqeConnection>>>
+export type TestBqeConnectionQueryError = ErrorType<void>
+
+
+/**
+ * @summary Fetch BQE project 23-0091
+ */
+
+export function useTestBqeConnection<TData = Awaited<ReturnType<typeof testBqeConnection>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof testBqeConnection>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getTestBqeConnectionQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
