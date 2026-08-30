@@ -335,6 +335,7 @@ function AdminView({ dashboard, currentUserId, onDashboardReload }) {
   const selfAdminRoleError = "You cannot remove or downgrade your own administrator role.";
   const [status, setStatus] = useState(null);
   const [users, setUsers] = useState([]);
+  const [accessChanges, setAccessChanges] = useState([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [pulling, setPulling] = useState(false);
@@ -342,14 +343,16 @@ function AdminView({ dashboard, currentUserId, onDashboardReload }) {
     setLoading(true);
     setMessage("");
     try {
-      const [statusResponse, usersResponse] = await Promise.all([
+      const [statusResponse, usersResponse, accessChangesResponse] = await Promise.all([
         fetch("/api/admin/status", { credentials: "include" }),
         fetch("/api/admin/users", { credentials: "include" }),
+        fetch("/api/admin/access-changes", { credentials: "include" }),
       ]);
-      if (!statusResponse.ok || !usersResponse.ok) throw new Error("Admin data could not be loaded.");
-      const [statusPayload, usersPayload] = await Promise.all([statusResponse.json(), usersResponse.json()]);
+      if (!statusResponse.ok || !usersResponse.ok || !accessChangesResponse.ok) throw new Error("Admin data could not be loaded.");
+      const [statusPayload, usersPayload, accessChangesPayload] = await Promise.all([statusResponse.json(), usersResponse.json(), accessChangesResponse.json()]);
       setStatus(statusPayload);
       setUsers(usersPayload.users);
+      setAccessChanges(accessChangesPayload.changes);
     } catch (caught) {
       setMessage(caught.message);
     } finally {
@@ -390,6 +393,7 @@ function AdminView({ dashboard, currentUserId, onDashboardReload }) {
         throw new Error(payload.error ?? "The user role could not be saved.");
       }
       setUsers((current) => current.map((user) => user.id === userId ? { ...user, role: payload.role } : user));
+      await loadAdmin();
       setMessage("Access role saved.");
     } catch (caught) {
       setMessage(caught.message);
@@ -413,6 +417,14 @@ function AdminView({ dashboard, currentUserId, onDashboardReload }) {
       <Blueprint>
         <div className="section-heading"><div><h3>Latest record counts</h3><p className="muted">Persisted object counts reported by the latest pull.</p></div></div>
         <div className="record-count-grid">{Object.entries(counts).map(([key, value]) => <div key={key} data-testid={`metric-count-${key}`}><span className="overline">{key}</span><strong>{number.format(value)}</strong></div>)}</div>
+      </Blueprint>
+      <Blueprint>
+        <div className="section-heading"><div><h3>Recent access changes</h3><p className="muted">Administrator-only history of dashboard role changes. Rejected self-lockout attempts are not included.</p></div></div>
+        {accessChanges.length === 0 ? <div className="notice" data-testid="status-access-history-empty">No dashboard access changes recorded yet.</div> : <div className="table-wrap"><table className="access-history-table"><thead><tr><th>Changed</th><th>Administrator</th><th>User</th><th>Role change</th></tr></thead><tbody>{accessChanges.map((change) => {
+          const actor = users.find((user) => user.id === change.actorUserId);
+          const target = users.find((user) => user.id === change.targetUserId);
+          return <tr key={change.id} data-testid={`row-access-change-${change.id}`}><td><time dateTime={change.changedAt}>{new Date(change.changedAt).toLocaleString()}</time></td><td><strong>{actor?.name ?? change.actorUserId}</strong>{actor?.email && <small className="muted">{actor.email}</small>}</td><td><strong>{target?.name ?? change.targetUserId}</strong>{target?.email && <small className="muted">{target.email}</small>}</td><td><span className="access-role">{change.previousRole ?? "Unapproved"}</span><span className="access-arrow" aria-hidden="true">→</span><span className="access-role">{change.newRole ?? "Unapproved"}</span></td></tr>;
+        })}</tbody></table></div>}
       </Blueprint>
       <Blueprint>
         <div className="section-heading"><div><h3>User access</h3><p className="muted">Unapproved users cannot access operations data. Your own admin role is locked here to prevent accidental lockout.</p></div></div>

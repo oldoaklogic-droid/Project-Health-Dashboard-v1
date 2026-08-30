@@ -261,6 +261,11 @@ td { font-size: 13px; } td small { display: block; margin-top: 4px; }
 .notice.error { color: var(--danger); }
 .notice button { margin-left: 12px; border: 1px solid currentColor; background: transparent; padding: 6px 10px; color: inherit; }
 .admin-message { padding: 13px 17px; border: var(--line); background: var(--sheet); text-align: left; }
+.access-history-table { min-width: 680px; }
+.access-history-table td { vertical-align: middle; }
+.access-history-table td small { overflow-wrap: anywhere; }
+.access-role { display: inline-block; padding: 4px 7px; border: var(--line); color: var(--cdi-blue-dark); background: #f1f7fb; font: 600 10px var(--font-mono); text-transform: uppercase; }
+.access-arrow { display: inline-block; margin: 0 8px; color: var(--accent); font-weight: 700; }
 button:disabled, select:disabled { cursor: not-allowed; opacity: .55; }
 
 /* Access and authentication sheets */

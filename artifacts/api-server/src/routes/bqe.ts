@@ -4,6 +4,7 @@ import { desc, eq } from "drizzle-orm";
 import {
   bqeConnectionTable,
   bqePullRunsTable,
+  dashboardAccessChangesTable,
   db,
 } from "@workspace/db";
 import { BqeConnectionError, getBqeAccessToken } from "../lib/bqe";
@@ -164,6 +165,25 @@ router.get("/admin/users", requireDashboardAdmin, async (_req, res): Promise<voi
   });
 });
 
+router.get("/admin/access-changes", requireDashboardAdmin, async (_req, res): Promise<void> => {
+  const changes = await db
+    .select()
+    .from(dashboardAccessChangesTable)
+    .orderBy(desc(dashboardAccessChangesTable.changedAt))
+    .limit(25);
+
+  res.json({
+    changes: changes.map((change) => ({
+      id: change.id,
+      actorUserId: change.actorUserId,
+      targetUserId: change.targetUserId,
+      previousRole: change.previousRole,
+      newRole: change.newRole,
+      changedAt: change.changedAt.toISOString(),
+    })),
+  });
+});
+
 router.patch("/admin/users/:userId/role", requireDashboardAdmin, async (req, res): Promise<void> => {
   const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
   if (!userId) {
@@ -188,26 +208,73 @@ router.patch("/admin/users/:userId/role", requireDashboardAdmin, async (req, res
       requestedRole,
     )
   ) {
+    req.log.warn(
+      {
+        actorUserId: res.locals.userId,
+        targetUserId: userId,
+        requestedRole,
+      },
+      "Rejected administrator self-lockout role change",
+    );
     res.status(403).json({
       error: "You cannot remove or downgrade your own administrator role.",
     });
     return;
   }
   const user = await clerkClient.users.getUser(userId);
+  const previousRole =
+    user.publicMetadata.dashboardRole === "viewer" ||
+    user.publicMetadata.dashboardRole === "editor" ||
+    user.publicMetadata.dashboardRole === "admin"
+      ? user.publicMetadata.dashboardRole
+      : null;
+  if (previousRole === requestedRole) {
+    res.json({
+      id: user.id,
+      role: previousRole,
+    });
+    return;
+  }
   const updated = await clerkClient.users.updateUserMetadata(userId, {
     publicMetadata: {
       ...user.publicMetadata,
       dashboardRole: requestedRole,
     },
   });
+  const updatedRole =
+    updated.publicMetadata.dashboardRole === "viewer" ||
+    updated.publicMetadata.dashboardRole === "editor" ||
+    updated.publicMetadata.dashboardRole === "admin"
+      ? updated.publicMetadata.dashboardRole
+      : null;
+
+  try {
+    await db.insert(dashboardAccessChangesTable).values({
+      actorUserId: res.locals.userId,
+      targetUserId: userId,
+      previousRole,
+      newRole: updatedRole,
+    });
+  } catch (error: unknown) {
+    req.log.error(
+      {
+        err: error,
+        actorUserId: res.locals.userId,
+        targetUserId: userId,
+        previousRole,
+        newRole: updatedRole,
+      },
+      "Dashboard role changed but access audit record could not be saved",
+    );
+    res.status(500).json({
+      error: "The dashboard role changed, but its access history could not be saved.",
+    });
+    return;
+  }
+
   res.json({
     id: updated.id,
-    role:
-      updated.publicMetadata.dashboardRole === "viewer" ||
-      updated.publicMetadata.dashboardRole === "editor" ||
-      updated.publicMetadata.dashboardRole === "admin"
-        ? updated.publicMetadata.dashboardRole
-        : null,
+    role: updatedRole,
   });
 });
 
