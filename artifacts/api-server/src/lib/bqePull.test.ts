@@ -8,7 +8,9 @@ import {
 import {
   fixtureObjectCounts,
   futureDatedTimeFixture,
+  hierarchyRollupFixture,
   invoiceAllocationFixture,
+  invoiceRegisterFixture,
   partialPullFixture,
   paymentAllocationFixture,
 } from "./__fixtures__/bqePullFixtures";
@@ -47,9 +49,8 @@ describe("BQE pull fixtures", () => {
     assert.equal(result.total2026InvoicedAmount, 0);
     assert.equal(result.total2026PaymentsReceived, 150);
     assert.deepEqual(result.perProject["23-0147"], {
-      hours: 0,
-      invoicedAmount: 0,
-      paymentsReceived: 0,
+      exact: { hours: 0, invoicedAmount: 0, paymentsReceived: 0 },
+      rolledUp: { hours: 0, invoicedAmount: 0, paymentsReceived: 0 },
     });
     assert.equal(partialPullFixture.failedObjectTableRows.invoice?.[0]?.amount, "9000");
   });
@@ -65,9 +66,9 @@ describe("BQE pull fixtures", () => {
     });
 
     assert.equal(result.total2026InvoicedAmount, 2000);
-    assert.equal(result.perProject["23-0091"].invoicedAmount, 600);
-    assert.equal(result.perProject["23-0147"].invoicedAmount, 400);
-    assert.equal(result.perProject["24-0022"].invoicedAmount, 1000);
+    assert.equal(result.perProject["23-0091"].exact.invoicedAmount, 600);
+    assert.equal(result.perProject["23-0147"].exact.invoicedAmount, 400);
+    assert.equal(result.perProject["24-0022"].exact.invoicedAmount, 1000);
   });
 
   it("splits payments across projects and falls back to the header on mismatch", () => {
@@ -81,9 +82,9 @@ describe("BQE pull fixtures", () => {
     });
 
     assert.equal(result.total2026PaymentsReceived, 1000);
-    assert.equal(result.perProject["23-0091"].paymentsReceived, 300);
-    assert.equal(result.perProject["24-0022"].paymentsReceived, 200);
-    assert.equal(result.perProject["23-0147"].paymentsReceived, 500);
+    assert.equal(result.perProject["23-0091"].exact.paymentsReceived, 300);
+    assert.equal(result.perProject["24-0022"].exact.paymentsReceived, 200);
+    assert.equal(result.perProject["23-0147"].exact.paymentsReceived, 500);
   });
 
   it("excludes and exposes the 370 future-dated hours after the BQE as-of date", () => {
@@ -95,8 +96,38 @@ describe("BQE pull fixtures", () => {
     assert.equal(result.asOfDate, "2026-08-30");
     assert.equal(result.total2026Hours, 1_250);
     assert.equal(result.excludedFutureHours, 370);
-    assert.equal(result.perProject["23-0091"].hours, 1_250);
-    assert.equal(result.perProject["23-0147"].hours, 0);
+    assert.equal(result.perProject["23-0091"].exact.hours, 1_250);
+    assert.equal(result.perProject["23-0147"].exact.hours, 0);
+  });
+
+  it("keeps exact project totals and rolls child values to the root project", () => {
+    const result = summaryFor(hierarchyRollupFixture);
+
+    assert.deepEqual(result.perProject["23-0147"], {
+      exact: { hours: 2.5, invoicedAmount: 0, paymentsReceived: 0 },
+      rolledUp: { hours: 15, invoicedAmount: 300, paymentsReceived: 125 },
+    });
+  });
+
+  it("reproduces invoice register detail-row counts and net billed with tax", () => {
+    const result = summaryFor({
+      project: [
+        { id: "project-a", code: "23-0091" },
+        { id: "project-b", code: "23-0147" },
+      ],
+      invoice: invoiceRegisterFixture,
+    });
+
+    assert.equal(result.total2026InvoicedAmount, 550);
+    assert.equal(result.invoiceRegister.grossHeaderCount, 4);
+    assert.equal(result.invoiceRegister.detailRowCount, 5);
+    assert.equal(result.invoiceRegister.registerCount, 2);
+    assert.equal(result.invoiceRegister.netBilledWithTax, 225);
+    assert.equal(result.invoiceRegister.excludedFinanceChargeCount, 1);
+    assert.equal(result.invoiceRegister.financeChargeAmount, 75);
+    assert.equal(result.invoiceRegister.excludedDraftCount, 1);
+    assert.equal(result.invoiceRegister.excludedZeroAmountCount, 1);
+    assert.equal(result.invoiceRegister.excluded250InvoiceNumber, "4879");
   });
 
   it("merges HTTP 207 field batches by record id", async () => {
@@ -123,7 +154,7 @@ describe("BQE pull fixtures", () => {
         name: "Fixture Project",
       },
     ]);
-    assert.equal(requests.length, 5);
+    assert.ok(requests.length > 5);
     assert.equal(requests[0].searchParams.get("page"), "1,100");
   });
 

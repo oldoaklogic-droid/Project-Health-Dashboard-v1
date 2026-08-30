@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { BqeInvoiceRegister } from './bqeInvoiceRegister';
 import type { BqeObjectCounts } from './bqeObjectCounts';
 import type { BqeReconciliationPerProject } from './bqeReconciliationPerProject';
 
@@ -17,6 +18,7 @@ export interface BqeReconciliation {
   total2026Hours: number;
   excludedFutureHours: number;
   total2026InvoicedAmount: number;
+  invoiceRegister: BqeInvoiceRegister;
   total2026PaymentsReceived: number;
   perProject: BqeReconciliationPerProject;
 }

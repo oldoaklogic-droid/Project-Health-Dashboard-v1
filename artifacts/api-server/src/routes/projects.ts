@@ -40,6 +40,9 @@ const names = [
   ["26-0120", "Canyon Ridge Plat", "Canyon Ridge LLC"],
   ["26-0121", "North Fork Access", "North Fork Holdings"],
   ["26-0122", "Juniper Creek Boundary", "Juniper Creek LLC"],
+  ["23-0091", "Raj's Plaza", "Paul Jhuty"],
+  ["23-0147", "Chelan Meadows", "Raja Venugopal"],
+  ["24-0022", "Haystack Water System", "Raja Venugopal"],
 ] as const;
 const pms = ["Arlen Brazill", "Rex Gallion", "Justin Wilson", "Megan Santos", "Kara Lee"];
 const exposures = [125000, 108500, 97500, 87000, 76000, 65000, 54000, 43000, 32000, 21100, 15991, 125000];
@@ -87,10 +90,7 @@ let seedPromise: Promise<void> | null = null;
 async function ensureSeeded(): Promise<void> {
   if (!seedPromise) {
     seedPromise = (async () => {
-      const existing = await db.select({ code: projectsTable.code }).from(projectsTable).limit(1);
-      if (existing.length === 0) {
-        await db.insert(projectsTable).values(seedRows());
-      }
+      await db.insert(projectsTable).values(seedRows()).onConflictDoNothing();
     })();
   }
   await seedPromise;
@@ -116,9 +116,16 @@ type ProjectBqeMetrics = {
 
 type EnrichedProject = ReturnType<typeof toProject>;
 type ProjectReconciliation = {
-  hours: number;
-  invoicedAmount: number;
-  paymentsReceived: number;
+  exact: {
+    hours: number;
+    invoicedAmount: number;
+    paymentsReceived: number;
+  };
+  rolledUp: {
+    hours: number;
+    invoicedAmount: number;
+    paymentsReceived: number;
+  };
 };
 type BqePortfolioTotals = {
   hours: string | null;
@@ -152,9 +159,16 @@ function toProject(
   row: Project,
   metrics?: ProjectBqeMetrics,
   reconciliation?: {
-    hours: number;
-    invoicedAmount: number;
-    paymentsReceived: number;
+    exact: {
+      hours: number;
+      invoicedAmount: number;
+      paymentsReceived: number;
+    };
+    rolledUp: {
+      hours: number;
+      invoicedAmount: number;
+      paymentsReceived: number;
+    };
   },
 ) {
   const bqePulledAt = timestampString(metrics?.bqePulledAt);
@@ -192,9 +206,14 @@ function toProject(
     budgetHours: nullableNumber(metrics?.budgetHours ?? null),
     invoicedAmount: nullableNumber(metrics?.invoicedAmount ?? null),
     paidAmount: nullableNumber(metrics?.paidAmount ?? null),
-    reconciliationHours: reconciliation?.hours ?? null,
-    reconciliationInvoicedAmount: reconciliation?.invoicedAmount ?? null,
-    reconciliationPaidAmount: reconciliation?.paymentsReceived ?? null,
+    reconciliationHours: reconciliation?.exact.hours ?? null,
+    reconciliationInvoicedAmount: reconciliation?.exact.invoicedAmount ?? null,
+    reconciliationPaidAmount: reconciliation?.exact.paymentsReceived ?? null,
+    reconciliationRolledUpHours: reconciliation?.rolledUp.hours ?? null,
+    reconciliationRolledUpInvoicedAmount:
+      reconciliation?.rolledUp.invoicedAmount ?? null,
+    reconciliationRolledUpPaidAmount:
+      reconciliation?.rolledUp.paymentsReceived ?? null,
     deliverable: row.deliverable,
     etcHours: row.etcHours == null ? null : numberValue(row.etcHours),
     scopeNote: row.scopeNote,
@@ -407,6 +426,7 @@ router.get("/dashboard", async (req, res): Promise<void> => {
             hours: usableReconciliation.total2026Hours,
             excludedFutureHours: usableReconciliation.excludedFutureHours,
             invoicedAmount: usableReconciliation.total2026InvoicedAmount,
+            invoiceRegister: usableReconciliation.invoiceRegister,
             paidAmount: usableReconciliation.total2026PaymentsReceived,
           }
         : null,

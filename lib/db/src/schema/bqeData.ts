@@ -22,6 +22,9 @@ export const bqeProjectsTable = pgTable(
     ...rawRecord,
     code: text("code"),
     name: text("name"),
+    parentId: text("parent_id"),
+    rootProjectId: text("root_project_id"),
+    projectType: integer("project_type"),
     client: text("client"),
     status: text("status"),
     contractType: text("contract_type"),
@@ -94,6 +97,16 @@ export const bqeInvoicesTable = pgTable(
     invoiceDate: date("invoice_date", { mode: "string" }),
     amount: numeric("amount"),
     balance: numeric("balance"),
+    status: integer("status"),
+    invoiceType: integer("invoice_type"),
+    draft: boolean("draft"),
+    void: boolean("void"),
+    serviceAmount: numeric("service_amount"),
+    expenseAmount: numeric("expense_amount"),
+    serviceTaxAmount: numeric("service_tax_amount"),
+    expenseTaxAmount: numeric("expense_tax_amount"),
+    discount: numeric("discount"),
+    registerAmount: numeric("register_amount"),
   },
   (table) => [
     index("bqe_invoices_date_idx").on(table.invoiceDate),
@@ -137,15 +150,43 @@ export const bqeReconciliationTable = pgTable("bqe_reconciliation", {
   total2026Hours: numeric("total_2026_hours").notNull(),
   excludedFutureHours: numeric("excluded_future_hours"),
   total2026InvoicedAmount: numeric("total_2026_invoiced_amount").notNull(),
+  invoiceRegister: jsonb("invoice_register").$type<{
+    grossHeaderCount: number;
+    grossInvoiceAmount: number;
+    detailRowCount: number;
+    registerCount: number;
+    netBilledWithTax: number;
+    excludedFinanceChargeCount: number;
+    financeChargeAmount: number;
+    excludedDraftCount: number;
+    excludedZeroAmountCount: number;
+    excluded250InvoiceNumber: string | null;
+    classifications: Array<{
+      status: number | null;
+      type: number | null;
+      isDraft: boolean;
+      isVoid: boolean;
+      count: number;
+      grossInvoiceAmount: number;
+      netBilledWithTax: number;
+    }>;
+  }>(),
   total2026PaymentsReceived: numeric("total_2026_payments_received").notNull(),
   perProject: jsonb("per_project")
     .$type<
       Record<
         string,
         {
-          hours: number;
-          invoicedAmount: number;
-          paymentsReceived: number;
+          exact: {
+            hours: number;
+            invoicedAmount: number;
+            paymentsReceived: number;
+          };
+          rolledUp: {
+            hours: number;
+            invoicedAmount: number;
+            paymentsReceived: number;
+          };
         }
       >
     >()

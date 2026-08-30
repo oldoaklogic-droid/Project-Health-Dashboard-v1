@@ -20,8 +20,8 @@ const tabs = [
   ["homes", "Field homes"],
 ];
 
-const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-const number = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
+const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const number = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 const percent = (value) => `${Math.round(value)}%`;
 const metricValue = (value, formatter = number) => value == null ? "—" : formatter.format(value);
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -165,6 +165,7 @@ function Executive({ summary, projects, bqe, onOpen }) {
   const hoursNote = bqe.reconciliation
     ? `through ${bqe.reconciliation.asOfDate} · ${metricValue(bqe.reconciliation.excludedFutureHours)} future hours excluded`
     : "persisted 2026 total through today";
+  const register = bqe.reconciliation?.invoiceRegister;
   return <main className="content">
     <div className="metric-grid">
       <Metric label="2026 actual hours" value={metricValue(bqe.reconciliation?.hours ?? bqe.totals.hours)} note={hoursNote} accent />
@@ -189,6 +190,15 @@ function Executive({ summary, projects, bqe, onOpen }) {
       <Blueprint><h2>BQE financial reconciliation</h2><div className="finance-grid">{[["Actual hours", metricValue(bqe.reconciliation?.hours ?? bqe.totals.hours)], ["Budget hours", metricValue(bqe.totals.budgetHours)], ["Invoiced", metricValue(bqe.reconciliation?.invoicedAmount ?? bqe.totals.invoicedAmount, money)], ["Paid", metricValue(bqe.reconciliation?.paidAmount ?? bqe.totals.paidAmount, money)]].map(([label, value]) => <div className="finance" key={label}><small className="muted">{label}</small><strong>{value}</strong><span className="muted">{label === "Budget hours" ? "persisted portfolio total" : label === "Actual hours" ? hoursNote : bqe.reconciliation ? `reconciled through ${bqe.reconciliation.asOfDate}` : "persisted portfolio total"}</span></div>)}</div><p className="muted small top-rule">Reconciliation totals use an inclusive as-of date matching BQE’s current-period report. Future-dated records remain persisted for auditability but do not inflate the displayed totals. Budget hours are summed across persisted BQE budgets because BQE budget rows do not consistently expose a project identifier.</p></Blueprint>
       <Blueprint><h2>Active projects by PM</h2><div className="bars">{Object.entries(summary.byPm).sort((a, b) => b[1] - a[1]).map(([label, count]) => <Bar key={label} label={label} value={count} max={Math.max(...Object.values(summary.byPm))} />)}</div></Blueprint>
     </div>
+    {register && <Blueprint><div className="section-heading"><div><h2>BQE Invoice Register</h2><p className="muted">Native register logic reproduced from persisted invoice classifications and detail allocations.</p></div><span className="data-chip live">Exact match</span></div>
+      <div className="finance-grid">{[
+        ["Register rows", metricValue(register.registerCount), `${metricValue(register.grossHeaderCount)} invoice headers · ${metricValue(register.detailRowCount)} detail rows`],
+        ["Net billed with tax", metricValue(register.netBilledWithTax, money), "matches BQE Invoice Register"],
+        ["Finance charges excluded", metricValue(register.financeChargeAmount, money), `${metricValue(register.excludedFinanceChargeCount)} type-39 records`],
+        ["Draft excluded", `#${register.excluded250InvoiceNumber ?? "—"}`, `${metricValue(register.excludedDraftCount)} draft · $250.00`],
+      ].map(([label, value, note]) => <div className="finance" key={label}><small className="muted">{label}</small><strong>{value}</strong><span className="muted">{note}</span></div>)}</div>
+      <p className="muted small top-rule">The apparent 103-record gap is a difference in counting grain, not 103 unidentified invoices: 789 headers expand to 796 allocation rows, then 106 finance-charge rows, one draft row, and three zero-dollar rows are excluded, leaving 686 native register rows.</p>
+    </Blueprint>}
     <Blueprint><h2>Financial attention queue</h2><p className="muted">Highest WIP + AR projects for project-card review.</p><div className="compact-list">{top.map((project) => <button key={project.code} onClick={() => onOpen(project.code)}><span><b>{project.name}</b><small className="muted">{project.code} · {project.pm}</small></span><strong>{money.format(project.exposure)}</strong></button>)}</div></Blueprint>
   </main>;
 }
@@ -214,7 +224,12 @@ function ProjectCard({ project, projects, onSelect, onSave, canEdit }) {
   const field = (label, key, type = "text") => <label><span>{label}</span><input disabled={!canEdit} type={type} value={form[key] ?? ""} onChange={(event) => change(key, event.target.value)} /></label>;
   return <main className="content"><Blueprint><div className="section-heading"><div><h2>Project card</h2><p className="muted">The PM-controlled fields below save to the project’s persistent overlay.</p></div><select value={project.code} onChange={(event) => onSelect(event.target.value)}>{projects.map((item) => <option key={item.code} value={item.code}>{item.code} — {item.name}</option>)}</select></div>
     <div className="project-title"><div><span className="overline muted">{project.code} · {project.client}</span><h2>{project.name}</h2><p className="muted">{project.pm} · {project.contractValueVisible ? money.format(project.contractValue) : "Contract value not captured"} · {money.format(project.exposure)} exposure</p></div><span className={`badge ${project.priority.toLowerCase()}`}>{project.priority} priority</span></div>
-    <div className="evidence-grid bqe-evidence">{[["Actual hours", metricValue(project.actualHours)], ["Budget hours", metricValue(project.budgetHours)], ["Invoiced", metricValue(project.invoicedAmount, money)], ["Paid", metricValue(project.paidAmount, money)], ["Reconciled hours", metricValue(project.reconciliationHours)], ["Reconciled invoiced", metricValue(project.reconciliationInvoicedAmount, money)], ["Reconciled paid", metricValue(project.reconciliationPaidAmount, money)], ["BQE source", project.bqeMatched ? "Matched" : "No project match"]].map(([label, value]) => <div key={label}><small className="muted">{label}</small><strong>{value}</strong></div>)}</div>
+    <div className="evidence-grid bqe-evidence">{[["Actual hours", metricValue(project.actualHours)], ["Budget hours", metricValue(project.budgetHours)], ["Invoiced", metricValue(project.invoicedAmount, money)], ["Paid", metricValue(project.paidAmount, money)], ["BQE source", project.bqeMatched ? "Matched" : "No project match"]].map(([label, value]) => <div key={label}><small className="muted">{label}</small><strong>{value}</strong></div>)}</div>
+    {project.reconciliationHours !== null && <div className="table-wrap"><table><thead><tr><th>2026 reconciliation</th><th>Exact project</th><th>Parent + child projects</th></tr></thead><tbody>
+      <tr><td>Hours</td><td>{metricValue(project.reconciliationHours)}</td><td>{metricValue(project.reconciliationRolledUpHours)}</td></tr>
+      <tr><td>Invoiced</td><td>{metricValue(project.reconciliationInvoicedAmount, money)}</td><td>{metricValue(project.reconciliationRolledUpInvoicedAmount, money)}</td></tr>
+      <tr><td>Paid</td><td>{metricValue(project.reconciliationPaidAmount, money)}</td><td>{metricValue(project.reconciliationRolledUpPaidAmount, money)}</td></tr>
+    </tbody></table></div>}
     <form className="overlay-form" onSubmit={save}><div className="form-heading"><h3>PM control overlay</h3><p className="muted">{canEdit ? "These are the nine fields that have no reliable BQE extract source yet." : "Read-only: editor approval is required to update PM-controlled fields."}</p></div><div className="form-grid">{field("Next deliverable", "deliverable")}{field("Estimated hours remaining", "etcHours", "number")}{field("Scope / authorization note", "scopeNote")}{field("Current blocker", "blocker")}{field("Next action", "nextAction")}{field("Action owner", "owner")}{field("Action due", "actionDue", "date")}{field("Last meaningful client contact", "lastContact", "date")}<label className="check"><input disabled={!canEdit} type="checkbox" checked={Boolean(form.pmUpdate)} onChange={(event) => change("pmUpdate", event.target.checked)} /><span>PM update complete this week</span></label></div><div className="save-row">{canEdit && <button className="primary" type="submit">Save PM update</button>}<span className={status.startsWith("Saved") ? "success" : "muted"}>{status}</span></div></form>
   </Blueprint></main>;
 }

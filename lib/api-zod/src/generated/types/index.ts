@@ -6,8 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './bqeInvoiceClassification';
+export * from './bqeInvoiceRegister';
 export * from './bqeObjectCounts';
 export * from './bqeProjectReconciliation';
+export * from './bqeProjectTotals';
 export * from './bqePullResult';
 export * from './bqePullResultErrors';
 export * from './bqePullResultStatus';

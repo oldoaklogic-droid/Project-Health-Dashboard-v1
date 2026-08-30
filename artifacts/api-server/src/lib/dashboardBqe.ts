@@ -12,13 +12,33 @@ export type DashboardReconciliation = {
   total2026Hours: number;
   excludedFutureHours: number;
   total2026InvoicedAmount: number;
+  invoiceRegister: {
+    grossHeaderCount: number;
+    grossInvoiceAmount: number;
+    detailRowCount: number;
+    registerCount: number;
+    netBilledWithTax: number;
+    excludedFinanceChargeCount: number;
+    financeChargeAmount: number;
+    excludedDraftCount: number;
+    excludedZeroAmountCount: number;
+    excluded250InvoiceNumber: string | null;
+    classifications: unknown[];
+  };
   total2026PaymentsReceived: number;
   perProject: Record<
     string,
     {
-      hours: number;
-      invoicedAmount: number;
-      paymentsReceived: number;
+      exact: {
+        hours: number;
+        invoicedAmount: number;
+        paymentsReceived: number;
+      };
+      rolledUp: {
+        hours: number;
+        invoicedAmount: number;
+        paymentsReceived: number;
+      };
     }
   >;
 };

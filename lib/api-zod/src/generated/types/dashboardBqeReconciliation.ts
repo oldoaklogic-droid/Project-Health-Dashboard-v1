@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { BqeInvoiceRegister } from './bqeInvoiceRegister';
 
 export interface DashboardBqeReconciliation {
   reportingYear: number;
@@ -12,5 +13,6 @@ export interface DashboardBqeReconciliation {
   hours: number;
   excludedFutureHours: number;
   invoicedAmount: number;
+  invoiceRegister: BqeInvoiceRegister;
   paidAmount: number;
 }

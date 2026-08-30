@@ -41,6 +41,34 @@ export type BqeObjectType = (typeof BQE_OBJECT_TYPES)[number];
 type BqeRecord = Record<string, unknown>;
 type PullStatus = "completed" | "partial" | "failed";
 
+export type BqeProjectTotals = {
+  hours: number;
+  invoicedAmount: number;
+  paymentsReceived: number;
+};
+
+export type BqeInvoiceRegisterSummary = {
+  grossHeaderCount: number;
+  grossInvoiceAmount: number;
+  detailRowCount: number;
+  registerCount: number;
+  netBilledWithTax: number;
+  excludedFinanceChargeCount: number;
+  financeChargeAmount: number;
+  excludedDraftCount: number;
+  excludedZeroAmountCount: number;
+  excluded250InvoiceNumber: string | null;
+  classifications: Array<{
+    status: number | null;
+    type: number | null;
+    isDraft: boolean;
+    isVoid: boolean;
+    count: number;
+    grossInvoiceAmount: number;
+    netBilledWithTax: number;
+  }>;
+};
+
 export type BqeReconciliationSummary = {
   pullRunId: string;
   completedAt: string;
@@ -50,13 +78,13 @@ export type BqeReconciliationSummary = {
   total2026Hours: number;
   excludedFutureHours: number;
   total2026InvoicedAmount: number;
+  invoiceRegister: BqeInvoiceRegisterSummary;
   total2026PaymentsReceived: number;
   perProject: Record<
     (typeof PROJECT_CODES)[number],
     {
-      hours: number;
-      invoicedAmount: number;
-      paymentsReceived: number;
+      exact: BqeProjectTotals;
+      rolledUp: BqeProjectTotals;
     }
   >;
 };
@@ -89,6 +117,9 @@ const FIELD_CONFIG: Record<BqeObjectType, FieldConfig> = {
       "contractType",
       "contractAmount",
       "manager",
+      "parentId",
+      "rootProjectId",
+      "type",
     ],
     dateFilter: false,
   },
@@ -148,6 +179,14 @@ const FIELD_CONFIG: Record<BqeObjectType, FieldConfig> = {
       "date",
       "invoiceAmount",
       "balance",
+      "status",
+      "type",
+      "isDraft",
+      "isVoid",
+      "serviceAmount",
+      "expenseAmount",
+      "serviceTaxAmount",
+      "expenseTaxAmount",
       "invoiceDetails",
       "lineItems",
     ],
@@ -513,6 +552,9 @@ async function persistProjects(records: BqeRecord[], pulledAt: Date): Promise<nu
     rawJson: asRawJson(record),
     code: textValue(getValue(record, ["code", "projectCode", "number"])),
     name: textValue(getValue(record, ["name", "projectName"])),
+    parentId: textValue(getValue(record, ["parentId", "parent.id"])),
+    rootProjectId: textValue(getValue(record, ["rootProjectId", "rootProject.id"])),
+    projectType: numberValue(getValue(record, ["type", "projectType"])),
     client: textValue(getValue(record, ["client", "clientName", "client.name"])),
     status: textValue(getValue(record, ["status", "projectStatus"])),
     contractType: textValue(getValue(record, ["contractType", "contract.type"])),
@@ -615,7 +657,28 @@ async function persistBudgets(records: BqeRecord[], pulledAt: Date): Promise<num
 async function persistInvoices(records: BqeRecord[], pulledAt: Date): Promise<number> {
   const rows = records.map((record) => {
     const details = getValue(record, ["invoiceDetails", "extendedAccountSplit"]);
-    const firstDetail = Array.isArray(details) ? details.find(isRecord) : null;
+    const detailRecords = recordArray(details);
+    const firstDetail = detailRecords[0] ?? null;
+    const detailTotal = (aliases: string[]) =>
+      detailRecords.reduce(
+        (total, detail) => total + (numberValue(getValue(detail, aliases)) ?? 0),
+        0,
+      );
+    const serviceAmount =
+      numberValue(getValue(record, ["serviceAmount"])) ??
+      detailTotal(["serviceAmount"]);
+    const expenseAmount =
+      numberValue(getValue(record, ["expenseAmount"])) ??
+      detailTotal(["expenseAmount"]);
+    const serviceTaxAmount =
+      numberValue(getValue(record, ["serviceTaxAmount"])) ??
+      detailTotal(["serviceTaxAmount"]);
+    const expenseTaxAmount =
+      numberValue(getValue(record, ["expenseTaxAmount"])) ??
+      detailTotal(["expenseTaxAmount"]);
+    const discount = detailTotal(["discount"]);
+    const registerAmount =
+      serviceAmount + expenseAmount + serviceTaxAmount + expenseTaxAmount - discount;
     return {
       recordId: recordId(record, "invoice"),
       pulledAt,
@@ -634,6 +697,16 @@ async function persistInvoices(records: BqeRecord[], pulledAt: Date): Promise<nu
       invoiceDate: dateValue(getValue(record, ["date", "invoiceDate"])),
       amount: numericText(getValue(record, ["invoiceAmount", "amount", "total"])),
       balance: numericText(getValue(record, ["balance", "outstandingBalance", "openBalance"])),
+      status: numberValue(getValue(record, ["status"])),
+      invoiceType: numberValue(getValue(record, ["type", "invoiceType"])),
+      draft: booleanValue(getValue(record, ["isDraft", "draft"])),
+      void: booleanValue(getValue(record, ["isVoid", "void"])),
+      serviceAmount: String(serviceAmount),
+      expenseAmount: String(expenseAmount),
+      serviceTaxAmount: String(serviceTaxAmount),
+      expenseTaxAmount: String(expenseTaxAmount),
+      discount: String(discount),
+      registerAmount: String(registerAmount),
     };
   });
   await upsertRows(bqeInvoicesTable, rows);
@@ -711,6 +784,20 @@ function projectCodeFor(
   return projectCode ?? (projectId ? projectById.get(projectId) ?? null : null);
 }
 
+function emptyProjectTotals(): BqeProjectTotals {
+  return { hours: 0, invoicedAmount: 0, paymentsReceived: 0 };
+}
+
+function invoiceDetailNetBilledWithTax(detail: BqeRecord): number {
+  return (
+    (numberValue(getValue(detail, ["serviceAmount"])) ?? 0) +
+    (numberValue(getValue(detail, ["expenseAmount"])) ?? 0) +
+    (numberValue(getValue(detail, ["serviceTaxAmount"])) ?? 0) +
+    (numberValue(getValue(detail, ["expenseTaxAmount"])) ?? 0) -
+    (numberValue(getValue(detail, ["discount"])) ?? 0)
+  );
+}
+
 export function reconcileBqeRecords(
   pullRunId: string,
   completedAt: Date,
@@ -719,32 +806,82 @@ export function reconcileBqeRecords(
 ): BqeReconciliationSummary {
   const asOfDate = completedAt.toISOString().slice(0, 10);
   const projectById = new Map<string, string>();
+  const parentProjectById = new Map<string, string>();
+  const rootProjectById = new Map<string, string>();
   for (const project of pulledRecords.project ?? []) {
+    const id = recordId(project, "project");
     const code = textValue(getValue(project, ["code", "projectCode", "number"]));
     if (code) {
-      projectById.set(recordId(project, "project"), code);
+      projectById.set(id, code);
     }
+    const parentId = textValue(getValue(project, ["parentId", "parent.id"]));
+    const rootProjectId = textValue(
+      getValue(project, ["rootProjectId", "rootProject.id"]),
+    );
+    if (parentId) parentProjectById.set(id, parentId);
+    if (rootProjectId) rootProjectById.set(id, rootProjectId);
   }
+  const resolvedRootProjectId = (projectId: string | null): string | null => {
+    if (!projectId) return null;
+    const declaredRoot = rootProjectById.get(projectId);
+    if (declaredRoot) return declaredRoot;
+    const visited = new Set<string>();
+    let current = projectId;
+    while (!visited.has(current)) {
+      visited.add(current);
+      const parent = parentProjectById.get(current);
+      if (!parent) return current;
+      const parentRoot = rootProjectById.get(parent);
+      if (parentRoot) return parentRoot;
+      current = parent;
+    }
+    return projectId;
+  };
 
   const perProject = Object.fromEntries(
     PROJECT_CODES.map((code) => [
       code,
-      { hours: 0, invoicedAmount: 0, paymentsReceived: 0 },
+      { exact: emptyProjectTotals(), rolledUp: emptyProjectTotals() },
     ]),
   ) as BqeReconciliationSummary["perProject"];
   let total2026Hours = 0;
   let excludedFutureHours = 0;
   let total2026InvoicedAmount = 0;
   let total2026PaymentsReceived = 0;
+  const invoiceRegister: BqeInvoiceRegisterSummary = {
+    grossHeaderCount: 0,
+    grossInvoiceAmount: 0,
+    detailRowCount: 0,
+    registerCount: 0,
+    netBilledWithTax: 0,
+    excludedFinanceChargeCount: 0,
+    financeChargeAmount: 0,
+    excludedDraftCount: 0,
+    excludedZeroAmountCount: 0,
+    excluded250InvoiceNumber: null,
+    classifications: [],
+  };
+  const invoiceClassifications = new Map<
+    string,
+    BqeInvoiceRegisterSummary["classifications"][number]
+  >();
   const addProjectValue = (
     projectId: string | null,
     projectCode: string | null,
-    field: keyof BqeReconciliationSummary["perProject"][(typeof PROJECT_CODES)[number]],
+    rootProjectId: string | null,
+    field: keyof BqeProjectTotals,
     amount: number,
   ) => {
-    const code = projectCodeFor(projectId, projectCode, projectById);
-    if (code && code in perProject) {
-      perProject[code as (typeof PROJECT_CODES)[number]][field] += amount;
+    const exactCode = projectCodeFor(projectId, projectCode, projectById);
+    if (exactCode && exactCode in perProject) {
+      perProject[exactCode as (typeof PROJECT_CODES)[number]].exact[field] += amount;
+    }
+    const rootId = rootProjectId ?? resolvedRootProjectId(projectId);
+    const rolledUpCode =
+      (rootId ? projectById.get(rootId) ?? null : null) ?? exactCode;
+    if (rolledUpCode && rolledUpCode in perProject) {
+      perProject[rolledUpCode as (typeof PROJECT_CODES)[number]].rolledUp[field] +=
+        amount;
     }
   };
   const inReportingYear = (date: string | null) =>
@@ -765,11 +902,15 @@ export function reconcileBqeRecords(
     headerAmount: number,
     fallbackProjectId: string | null,
     fallbackProjectCode: string | null,
+    fallbackRootProjectId: string | null,
   ) => {
     const allocations = allocationRecords(record, aliases).map((item) => ({
       projectId: textValue(getValue(item, ["projectId", "project.id"])),
       projectCode: textValue(
         getValue(item, ["projectCode", "project.code", "project.number"]),
+      ),
+      rootProjectId: textValue(
+        getValue(item, ["rootProjectId", "rootProject.id"]),
       ),
       amount: numberValue(
         getValue(item, ["amount", "invoiceAmount", "paymentAmount"]),
@@ -792,13 +933,20 @@ export function reconcileBqeRecords(
         addProjectValue(
           allocation.projectId,
           allocation.projectCode,
+          allocation.rootProjectId,
           field,
           allocation.amount ?? 0,
         );
       }
       return;
     }
-    addProjectValue(fallbackProjectId, fallbackProjectCode, field, headerAmount);
+    addProjectValue(
+      fallbackProjectId,
+      fallbackProjectCode,
+      fallbackRootProjectId,
+      field,
+      headerAmount,
+    );
   };
 
   for (const entry of pulledRecords.timeentry ?? []) {
@@ -816,6 +964,7 @@ export function reconcileBqeRecords(
     addProjectValue(
       textValue(getValue(entry, ["projectId", "project.id"])),
       textValue(getValue(entry, ["projectCode", "project.code", "project.number"])),
+      textValue(getValue(entry, ["rootProjectId", "rootProject.id"])),
       "hours",
       hours,
     );
@@ -828,6 +977,79 @@ export function reconcileBqeRecords(
     const amount =
       numberValue(getValue(invoice, ["invoiceAmount", "amount", "total"])) ?? 0;
     total2026InvoicedAmount += amount;
+    invoiceRegister.grossHeaderCount += 1;
+    invoiceRegister.grossInvoiceAmount += amount;
+    const status = numberValue(getValue(invoice, ["status"]));
+    const type = numberValue(getValue(invoice, ["type", "invoiceType"]));
+    const isDraft =
+      booleanValue(getValue(invoice, ["isDraft", "draft"])) ?? false;
+    const isVoid = booleanValue(getValue(invoice, ["isVoid", "void"])) ?? false;
+    const invoiceNumber = textValue(
+      getValue(invoice, ["invoiceNumber", "number", "invoiceNo"]),
+    );
+    const detailRecords = allocationRecords(invoice, [
+      "invoiceDetails",
+      "extendedAccountSplit",
+      "lineItems",
+    ]);
+    const registerDetails =
+      detailRecords.length > 0
+        ? detailRecords
+        : [
+            {
+              serviceAmount: getValue(invoice, ["serviceAmount"]),
+              expenseAmount: getValue(invoice, ["expenseAmount"]),
+              serviceTaxAmount: getValue(invoice, ["serviceTaxAmount"]),
+              expenseTaxAmount: getValue(invoice, ["expenseTaxAmount"]),
+              discount: 0,
+            },
+          ];
+    invoiceRegister.detailRowCount += registerDetails.length;
+    const invoiceNetBilledWithTax = registerDetails.reduce(
+      (sum, detail) => sum + invoiceDetailNetBilledWithTax(detail),
+      0,
+    );
+    const classificationKey = JSON.stringify({
+      status,
+      type,
+      isDraft,
+      isVoid,
+    });
+    const classification = invoiceClassifications.get(classificationKey) ?? {
+      status,
+      type,
+      isDraft,
+      isVoid,
+      count: 0,
+      grossInvoiceAmount: 0,
+      netBilledWithTax: 0,
+    };
+    classification.count += 1;
+    classification.grossInvoiceAmount += amount;
+    classification.netBilledWithTax += invoiceNetBilledWithTax;
+    invoiceClassifications.set(classificationKey, classification);
+    const isFinanceCharge = type === 39;
+    if (isFinanceCharge) {
+      invoiceRegister.excludedFinanceChargeCount += 1;
+      invoiceRegister.financeChargeAmount += amount;
+    }
+    if (isDraft) {
+      invoiceRegister.excludedDraftCount += 1;
+      if (rounded(amount) === 250) {
+        invoiceRegister.excluded250InvoiceNumber = invoiceNumber;
+      }
+    }
+    for (const detail of registerDetails) {
+      const detailAmount = invoiceDetailNetBilledWithTax(detail);
+      if (!isFinanceCharge && !isDraft && !isVoid) {
+        if (Math.abs(rounded(detailAmount)) <= 0.01) {
+          invoiceRegister.excludedZeroAmountCount += 1;
+        } else {
+          invoiceRegister.registerCount += 1;
+          invoiceRegister.netBilledWithTax += detailAmount;
+        }
+      }
+    }
     addValidatedAllocations(
       invoice,
       ["invoiceDetails", "extendedAccountSplit", "lineItems"],
@@ -835,6 +1057,7 @@ export function reconcileBqeRecords(
       amount,
       textValue(getValue(invoice, ["projectId", "project.id"])),
       textValue(getValue(invoice, ["projectCode", "project.code", "project.number"])),
+      textValue(getValue(invoice, ["rootProjectId", "rootProject.id"])),
     );
   }
   for (const payment of pulledRecords.payment ?? []) {
@@ -852,6 +1075,7 @@ export function reconcileBqeRecords(
       amount,
       textValue(getValue(payment, ["projectId", "project.id"])),
       textValue(getValue(payment, ["projectCode", "project.code", "project.number"])),
+      textValue(getValue(payment, ["rootProjectId", "rootProject.id"])),
     );
   }
 
@@ -859,10 +1083,28 @@ export function reconcileBqeRecords(
   excludedFutureHours = rounded(excludedFutureHours);
   total2026InvoicedAmount = rounded(total2026InvoicedAmount);
   total2026PaymentsReceived = rounded(total2026PaymentsReceived);
+  invoiceRegister.grossInvoiceAmount = rounded(invoiceRegister.grossInvoiceAmount);
+  invoiceRegister.netBilledWithTax = rounded(invoiceRegister.netBilledWithTax);
+  invoiceRegister.financeChargeAmount = rounded(invoiceRegister.financeChargeAmount);
+  invoiceRegister.classifications = [...invoiceClassifications.values()]
+    .map((classification) => ({
+      ...classification,
+      grossInvoiceAmount: rounded(classification.grossInvoiceAmount),
+      netBilledWithTax: rounded(classification.netBilledWithTax),
+    }))
+    .sort(
+      (left, right) =>
+        (left.type ?? -1) - (right.type ?? -1) ||
+        (left.status ?? -1) - (right.status ?? -1) ||
+        Number(left.isDraft) - Number(right.isDraft) ||
+        Number(left.isVoid) - Number(right.isVoid),
+    );
   for (const totals of Object.values(perProject)) {
-    totals.hours = rounded(totals.hours);
-    totals.invoicedAmount = rounded(totals.invoicedAmount);
-    totals.paymentsReceived = rounded(totals.paymentsReceived);
+    for (const values of [totals.exact, totals.rolledUp]) {
+      values.hours = rounded(values.hours);
+      values.invoicedAmount = rounded(values.invoicedAmount);
+      values.paymentsReceived = rounded(values.paymentsReceived);
+    }
   }
 
   const summary: BqeReconciliationSummary = {
@@ -874,6 +1116,7 @@ export function reconcileBqeRecords(
     total2026Hours,
     excludedFutureHours,
     total2026InvoicedAmount,
+    invoiceRegister,
     total2026PaymentsReceived,
     perProject,
   };
@@ -896,6 +1139,7 @@ async function persistReconciliation(
       total2026Hours: String(summary.total2026Hours),
       excludedFutureHours: String(summary.excludedFutureHours),
       total2026InvoicedAmount: String(summary.total2026InvoicedAmount),
+      invoiceRegister: summary.invoiceRegister,
       total2026PaymentsReceived: String(summary.total2026PaymentsReceived),
       perProject: summary.perProject,
     })
@@ -910,6 +1154,7 @@ async function persistReconciliation(
         total2026Hours: String(summary.total2026Hours),
         excludedFutureHours: String(summary.excludedFutureHours),
         total2026InvoicedAmount: String(summary.total2026InvoicedAmount),
+        invoiceRegister: summary.invoiceRegister,
         total2026PaymentsReceived: String(summary.total2026PaymentsReceived),
         perProject: summary.perProject,
       },
@@ -1040,9 +1285,25 @@ export async function getLatestBqeReconciliation(): Promise<BqeReconciliationSum
   const asOfDate = row.asOfDate ?? row.completedAt.toISOString().slice(0, 10);
   let total2026Hours = numberOrZero(row.total2026Hours);
   let excludedFutureHours = numberOrZero(row.excludedFutureHours);
-  const perProject = structuredClone(
-    row.perProject as BqeReconciliationSummary["perProject"],
-  );
+  const persistedPerProject = row.perProject as Record<
+    string,
+    | BqeReconciliationSummary["perProject"][keyof BqeReconciliationSummary["perProject"]]
+    | BqeProjectTotals
+  >;
+  const perProject = Object.fromEntries(
+    PROJECT_CODES.map((code) => {
+      const persisted = persistedPerProject[code];
+      const exact =
+        persisted && "exact" in persisted
+          ? structuredClone(persisted.exact)
+          : structuredClone((persisted as BqeProjectTotals | undefined) ?? emptyProjectTotals());
+      const rolledUp =
+        persisted && "rolledUp" in persisted
+          ? structuredClone(persisted.rolledUp)
+          : structuredClone(exact);
+      return [code, { exact, rolledUp }];
+    }),
+  ) as BqeReconciliationSummary["perProject"];
   if (row.asOfDate === null || row.excludedFutureHours === null) {
     const persistedHours = await db.execute<{
       projectCode: string | null;
@@ -1075,13 +1336,14 @@ export async function getLatestBqeReconciliation(): Promise<BqeReconciliationSum
       ),
     );
     for (const project of Object.values(perProject)) {
-      project.hours = 0;
+      project.exact.hours = 0;
+      project.rolledUp.hours = 0;
     }
     for (const hours of persistedHours.rows) {
       if (hours.projectCode && hours.projectCode in perProject) {
-        perProject[hours.projectCode as keyof typeof perProject].hours = rounded(
-          numberOrZero(hours.includedHours),
-        );
+        const value = rounded(numberOrZero(hours.includedHours));
+        perProject[hours.projectCode as keyof typeof perProject].exact.hours = value;
+        perProject[hours.projectCode as keyof typeof perProject].rolledUp.hours = value;
       }
     }
   }
@@ -1094,6 +1356,20 @@ export async function getLatestBqeReconciliation(): Promise<BqeReconciliationSum
     total2026Hours,
     excludedFutureHours,
     total2026InvoicedAmount: numberOrZero(row.total2026InvoicedAmount),
+    invoiceRegister:
+      (row.invoiceRegister as BqeInvoiceRegisterSummary | null) ?? {
+        grossHeaderCount: 0,
+        grossInvoiceAmount: numberOrZero(row.total2026InvoicedAmount),
+        detailRowCount: 0,
+        registerCount: 0,
+        netBilledWithTax: 0,
+        excludedFinanceChargeCount: 0,
+        financeChargeAmount: 0,
+        excludedDraftCount: 0,
+        excludedZeroAmountCount: 0,
+        excluded250InvoiceNumber: null,
+        classifications: [],
+      },
     total2026PaymentsReceived: numberOrZero(row.total2026PaymentsReceived),
     perProject,
   };

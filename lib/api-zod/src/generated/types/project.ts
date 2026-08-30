@@ -44,6 +44,12 @@ export interface Project {
   reconciliationInvoicedAmount: number | null;
   /** @nullable */
   reconciliationPaidAmount: number | null;
+  /** @nullable */
+  reconciliationRolledUpHours: number | null;
+  /** @nullable */
+  reconciliationRolledUpInvoicedAmount: number | null;
+  /** @nullable */
+  reconciliationRolledUpPaidAmount: number | null;
   deliverable: string;
   /** @nullable */
   etcHours: number | null;

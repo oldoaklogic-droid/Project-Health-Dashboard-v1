@@ -173,16 +173,53 @@ components:
         budget: { type: number }
         invoice: { type: number }
         payment: { type: number }
-    BqeProjectReconciliation:
+    BqeProjectTotals:
       type: object
       required: [hours, invoicedAmount, paymentsReceived]
       properties:
         hours: { type: number }
         invoicedAmount: { type: number }
         paymentsReceived: { type: number }
+    BqeProjectReconciliation:
+      type: object
+      required: [exact, rolledUp]
+      properties:
+        exact:
+          $ref: "#/components/schemas/BqeProjectTotals"
+        rolledUp:
+          $ref: "#/components/schemas/BqeProjectTotals"
+    BqeInvoiceClassification:
+      type: object
+      required: [status, type, isDraft, isVoid, count, grossInvoiceAmount, netBilledWithTax]
+      properties:
+        status: { type: ["number", "null"] }
+        type: { type: ["number", "null"] }
+        isDraft: { type: boolean }
+        isVoid: { type: boolean }
+        count: { type: number }
+        grossInvoiceAmount: { type: number }
+        netBilledWithTax: { type: number }
+    BqeInvoiceRegister:
+      type: object
+      required: [grossHeaderCount, grossInvoiceAmount, detailRowCount, registerCount, netBilledWithTax, excludedFinanceChargeCount, financeChargeAmount, excludedDraftCount, excludedZeroAmountCount, excluded250InvoiceNumber, classifications]
+      properties:
+        grossHeaderCount: { type: number }
+        grossInvoiceAmount: { type: number }
+        detailRowCount: { type: number }
+        registerCount: { type: number }
+        netBilledWithTax: { type: number }
+        excludedFinanceChargeCount: { type: number }
+        financeChargeAmount: { type: number }
+        excludedDraftCount: { type: number }
+        excludedZeroAmountCount: { type: number }
+        excluded250InvoiceNumber: { type: ["string", "null"] }
+        classifications:
+          type: array
+          items:
+            $ref: "#/components/schemas/BqeInvoiceClassification"
     BqeReconciliation:
       type: object
-      required: [pullRunId, completedAt, reportingYear, asOfDate, objectCounts, total2026Hours, excludedFutureHours, total2026InvoicedAmount, total2026PaymentsReceived, perProject]
+      required: [pullRunId, completedAt, reportingYear, asOfDate, objectCounts, total2026Hours, excludedFutureHours, total2026InvoicedAmount, invoiceRegister, total2026PaymentsReceived, perProject]
       properties:
         pullRunId: { type: string }
         completedAt: { type: string, format: date-time }
@@ -193,6 +230,8 @@ components:
         total2026Hours: { type: number }
         excludedFutureHours: { type: number }
         total2026InvoicedAmount: { type: number }
+        invoiceRegister:
+          $ref: "#/components/schemas/BqeInvoiceRegister"
         total2026PaymentsReceived: { type: number }
         perProject:
           type: object
@@ -219,7 +258,7 @@ components:
             - type: "null"
     Project:
       type: object
-      required: [code, name, client, pm, priority, overall, confidence, contractValue, contractValueVisible, budgetExists, pctAvail, pctComplete, dueAvail, dueDate, recent90, laborWip, expenseWip, openAr, exposure, bqeMatched, bqePulledAt, actualHours, budgetHours, invoicedAmount, paidAmount, reconciliationHours, reconciliationInvoicedAmount, reconciliationPaidAmount, deliverable, etcHours, scopeNote, blocker, nextAction, owner, actionDue, lastContact, pmUpdate]
+      required: [code, name, client, pm, priority, overall, confidence, contractValue, contractValueVisible, budgetExists, pctAvail, pctComplete, dueAvail, dueDate, recent90, laborWip, expenseWip, openAr, exposure, bqeMatched, bqePulledAt, actualHours, budgetHours, invoicedAmount, paidAmount, reconciliationHours, reconciliationInvoicedAmount, reconciliationPaidAmount, reconciliationRolledUpHours, reconciliationRolledUpInvoicedAmount, reconciliationRolledUpPaidAmount, deliverable, etcHours, scopeNote, blocker, nextAction, owner, actionDue, lastContact, pmUpdate]
       properties:
         code: { type: string }
         name: { type: string }
@@ -249,6 +288,9 @@ components:
         reconciliationHours: { type: ["number", "null"] }
         reconciliationInvoicedAmount: { type: ["number", "null"] }
         reconciliationPaidAmount: { type: ["number", "null"] }
+        reconciliationRolledUpHours: { type: ["number", "null"] }
+        reconciliationRolledUpInvoicedAmount: { type: ["number", "null"] }
+        reconciliationRolledUpPaidAmount: { type: ["number", "null"] }
         deliverable: { type: string }
         etcHours: { type: ["number", "null"] }
         scopeNote: { type: string }
@@ -319,13 +361,15 @@ components:
         paidAmount: { type: number }
     DashboardBqeReconciliation:
       type: object
-      required: [reportingYear, asOfDate, hours, excludedFutureHours, invoicedAmount, paidAmount]
+      required: [reportingYear, asOfDate, hours, excludedFutureHours, invoicedAmount, invoiceRegister, paidAmount]
       properties:
         reportingYear: { type: number }
         asOfDate: { type: string }
         hours: { type: number }
         excludedFutureHours: { type: number }
         invoicedAmount: { type: number }
+        invoiceRegister:
+          $ref: "#/components/schemas/BqeInvoiceRegister"
         paidAmount: { type: number }
     DashboardBqeStatus:
       type: object

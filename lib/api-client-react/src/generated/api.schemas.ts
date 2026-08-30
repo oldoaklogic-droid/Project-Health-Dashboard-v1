@@ -18,10 +18,42 @@ export interface BqeObjectCounts {
   payment: number;
 }
 
-export interface BqeProjectReconciliation {
+export interface BqeProjectTotals {
   hours: number;
   invoicedAmount: number;
   paymentsReceived: number;
+}
+
+export interface BqeProjectReconciliation {
+  exact: BqeProjectTotals;
+  rolledUp: BqeProjectTotals;
+}
+
+export interface BqeInvoiceClassification {
+  /** @nullable */
+  status: number | null;
+  /** @nullable */
+  type: number | null;
+  isDraft: boolean;
+  isVoid: boolean;
+  count: number;
+  grossInvoiceAmount: number;
+  netBilledWithTax: number;
+}
+
+export interface BqeInvoiceRegister {
+  grossHeaderCount: number;
+  grossInvoiceAmount: number;
+  detailRowCount: number;
+  registerCount: number;
+  netBilledWithTax: number;
+  excludedFinanceChargeCount: number;
+  financeChargeAmount: number;
+  excludedDraftCount: number;
+  excludedZeroAmountCount: number;
+  /** @nullable */
+  excluded250InvoiceNumber: string | null;
+  classifications: BqeInvoiceClassification[];
 }
 
 export type BqeReconciliationPerProject = {[key: string]: BqeProjectReconciliation};
@@ -35,6 +67,7 @@ export interface BqeReconciliation {
   total2026Hours: number;
   excludedFutureHours: number;
   total2026InvoicedAmount: number;
+  invoiceRegister: BqeInvoiceRegister;
   total2026PaymentsReceived: number;
   perProject: BqeReconciliationPerProject;
 }
@@ -98,6 +131,12 @@ export interface Project {
   reconciliationInvoicedAmount: number | null;
   /** @nullable */
   reconciliationPaidAmount: number | null;
+  /** @nullable */
+  reconciliationRolledUpHours: number | null;
+  /** @nullable */
+  reconciliationRolledUpInvoicedAmount: number | null;
+  /** @nullable */
+  reconciliationRolledUpPaidAmount: number | null;
   deliverable: string;
   /** @nullable */
   etcHours: number | null;
@@ -173,6 +212,7 @@ export interface DashboardBqeReconciliation {
   hours: number;
   excludedFutureHours: number;
   invoicedAmount: number;
+  invoiceRegister: BqeInvoiceRegister;
   paidAmount: number;
 }
 

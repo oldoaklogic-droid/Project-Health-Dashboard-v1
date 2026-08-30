@@ -116,3 +116,143 @@ export const futureDatedTimeFixture = [
     projectCode: "23-0147",
   },
 ];
+
+export const hierarchyRollupFixture = {
+  project: [
+    { id: "root-a", code: "23-0147", parentId: null, rootProjectId: null, type: 0 },
+    { id: "child-a", code: "23-0147-01", parentId: "root-a", rootProjectId: "root-a", type: 1 },
+    { id: "root-b", code: "24-0022", parentId: null, rootProjectId: null, type: 0 },
+  ],
+  timeentry: [
+    { id: "time-child", date: "2026-05-01", projectId: "child-a", actualHours: 12.5 },
+    { id: "time-root", date: "2026-05-02", projectId: "root-a", actualHours: 2.5 },
+  ],
+  invoice: [
+    {
+      id: "invoice-child",
+      invoiceNumber: "fixture-child",
+      date: "2026-05-03",
+      invoiceAmount: 300,
+      status: 1,
+      type: 13,
+      isDraft: false,
+      isVoid: false,
+      invoiceDetails: [
+        {
+          projectId: "child-a",
+          rootProjectId: "root-a",
+          amount: 300,
+          serviceAmount: 300,
+          expenseAmount: 0,
+          serviceTaxAmount: 0,
+          expenseTaxAmount: 0,
+          discount: 0,
+        },
+      ],
+    },
+  ],
+  payment: [
+    {
+      id: "payment-child",
+      date: "2026-05-04",
+      amount: 125,
+      projectId: "child-a",
+    },
+  ],
+};
+
+export const invoiceRegisterFixture = [
+  {
+    id: "invoice-standard",
+    invoiceNumber: "standard",
+    date: "2026-06-01",
+    invoiceAmount: 225,
+    status: 1,
+    type: 13,
+    isDraft: false,
+    isVoid: false,
+    invoiceDetails: [
+      {
+        projectCode: "23-0091",
+        amount: 100,
+        serviceAmount: 100,
+        expenseAmount: 0,
+        serviceTaxAmount: 0,
+        expenseTaxAmount: 0,
+        discount: 0,
+      },
+      {
+        projectCode: "23-0147",
+        amount: 125,
+        serviceAmount: 100,
+        expenseAmount: 30,
+        serviceTaxAmount: 0,
+        expenseTaxAmount: 0,
+        discount: 5,
+      },
+    ],
+  },
+  {
+    id: "invoice-finance-charge",
+    invoiceNumber: "finance",
+    date: "2026-06-02",
+    invoiceAmount: 75,
+    status: 0,
+    type: 39,
+    isDraft: false,
+    isVoid: false,
+    invoiceDetails: [
+      {
+        projectCode: "23-0091",
+        amount: 75,
+        serviceAmount: 0,
+        expenseAmount: 0,
+        serviceTaxAmount: 0,
+        expenseTaxAmount: 0,
+        discount: 0,
+      },
+    ],
+  },
+  {
+    id: "invoice-draft",
+    invoiceNumber: "4879",
+    date: "2026-06-03",
+    invoiceAmount: 250,
+    status: 0,
+    type: 13,
+    isDraft: true,
+    isVoid: false,
+    invoiceDetails: [
+      {
+        projectCode: "23-0091",
+        amount: 250,
+        serviceAmount: 250,
+        expenseAmount: 0,
+        serviceTaxAmount: 0,
+        expenseTaxAmount: 0,
+        discount: 0,
+      },
+    ],
+  },
+  {
+    id: "invoice-zero",
+    invoiceNumber: "zero",
+    date: "2026-06-04",
+    invoiceAmount: 0,
+    status: 1,
+    type: 13,
+    isDraft: false,
+    isVoid: false,
+    invoiceDetails: [
+      {
+        projectCode: "23-0091",
+        amount: 0,
+        serviceAmount: 0,
+        expenseAmount: 0,
+        serviceTaxAmount: 0,
+        expenseTaxAmount: 0,
+        discount: 0,
+      },
+    ],
+  },
+];

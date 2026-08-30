@@ -5,9 +5,9 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { BqeProjectTotals } from './bqeProjectTotals';
 
 export interface BqeProjectReconciliation {
-  hours: number;
-  invoicedAmount: number;
-  paymentsReceived: number;
+  exact: BqeProjectTotals;
+  rolledUp: BqeProjectTotals;
 }

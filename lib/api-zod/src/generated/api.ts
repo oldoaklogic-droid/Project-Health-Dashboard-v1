@@ -42,6 +42,27 @@ export const GetDashboardResponse = zod.object({
   "hours": zod.number(),
   "excludedFutureHours": zod.number(),
   "invoicedAmount": zod.number(),
+  "invoiceRegister": zod.object({
+  "grossHeaderCount": zod.number(),
+  "grossInvoiceAmount": zod.number(),
+  "detailRowCount": zod.number(),
+  "registerCount": zod.number(),
+  "netBilledWithTax": zod.number(),
+  "excludedFinanceChargeCount": zod.number(),
+  "financeChargeAmount": zod.number(),
+  "excludedDraftCount": zod.number(),
+  "excludedZeroAmountCount": zod.number(),
+  "excluded250InvoiceNumber": zod.string().nullable(),
+  "classifications": zod.array(zod.object({
+  "status": zod.number().nullable(),
+  "type": zod.number().nullable(),
+  "isDraft": zod.boolean(),
+  "isVoid": zod.boolean(),
+  "count": zod.number(),
+  "grossInvoiceAmount": zod.number(),
+  "netBilledWithTax": zod.number()
+}))
+}),
   "paidAmount": zod.number()
 }),zod.null()])
 }),
@@ -88,6 +109,9 @@ export const GetDashboardResponse = zod.object({
   "reconciliationHours": zod.number().nullable(),
   "reconciliationInvoicedAmount": zod.number().nullable(),
   "reconciliationPaidAmount": zod.number().nullable(),
+  "reconciliationRolledUpHours": zod.number().nullable(),
+  "reconciliationRolledUpInvoicedAmount": zod.number().nullable(),
+  "reconciliationRolledUpPaidAmount": zod.number().nullable(),
   "deliverable": zod.string(),
   "etcHours": zod.number().nullable(),
   "scopeNote": zod.string(),
@@ -137,6 +161,9 @@ export const GetProjectResponse = zod.object({
   "reconciliationHours": zod.number().nullable(),
   "reconciliationInvoicedAmount": zod.number().nullable(),
   "reconciliationPaidAmount": zod.number().nullable(),
+  "reconciliationRolledUpHours": zod.number().nullable(),
+  "reconciliationRolledUpInvoicedAmount": zod.number().nullable(),
+  "reconciliationRolledUpPaidAmount": zod.number().nullable(),
   "deliverable": zod.string(),
   "etcHours": zod.number().nullable(),
   "scopeNote": zod.string(),
@@ -197,6 +224,9 @@ export const UpdateProjectResponse = zod.object({
   "reconciliationHours": zod.number().nullable(),
   "reconciliationInvoicedAmount": zod.number().nullable(),
   "reconciliationPaidAmount": zod.number().nullable(),
+  "reconciliationRolledUpHours": zod.number().nullable(),
+  "reconciliationRolledUpInvoicedAmount": zod.number().nullable(),
+  "reconciliationRolledUpPaidAmount": zod.number().nullable(),
   "deliverable": zod.string(),
   "etcHours": zod.number().nullable(),
   "scopeNote": zod.string(),
@@ -251,11 +281,39 @@ export const RunBqePhase1PullResponse = zod.object({
   "total2026Hours": zod.number(),
   "excludedFutureHours": zod.number(),
   "total2026InvoicedAmount": zod.number(),
+  "invoiceRegister": zod.object({
+  "grossHeaderCount": zod.number(),
+  "grossInvoiceAmount": zod.number(),
+  "detailRowCount": zod.number(),
+  "registerCount": zod.number(),
+  "netBilledWithTax": zod.number(),
+  "excludedFinanceChargeCount": zod.number(),
+  "financeChargeAmount": zod.number(),
+  "excludedDraftCount": zod.number(),
+  "excludedZeroAmountCount": zod.number(),
+  "excluded250InvoiceNumber": zod.string().nullable(),
+  "classifications": zod.array(zod.object({
+  "status": zod.number().nullable(),
+  "type": zod.number().nullable(),
+  "isDraft": zod.boolean(),
+  "isVoid": zod.boolean(),
+  "count": zod.number(),
+  "grossInvoiceAmount": zod.number(),
+  "netBilledWithTax": zod.number()
+}))
+}),
   "total2026PaymentsReceived": zod.number(),
   "perProject": zod.record(zod.string(), zod.object({
+  "exact": zod.object({
   "hours": zod.number(),
   "invoicedAmount": zod.number(),
   "paymentsReceived": zod.number()
+}),
+  "rolledUp": zod.object({
+  "hours": zod.number(),
+  "invoicedAmount": zod.number(),
+  "paymentsReceived": zod.number()
+})
 }))
 }),zod.null()])
 })
@@ -280,11 +338,39 @@ export const GetBqeReconciliationResponse = zod.object({
   "total2026Hours": zod.number(),
   "excludedFutureHours": zod.number(),
   "total2026InvoicedAmount": zod.number(),
+  "invoiceRegister": zod.object({
+  "grossHeaderCount": zod.number(),
+  "grossInvoiceAmount": zod.number(),
+  "detailRowCount": zod.number(),
+  "registerCount": zod.number(),
+  "netBilledWithTax": zod.number(),
+  "excludedFinanceChargeCount": zod.number(),
+  "financeChargeAmount": zod.number(),
+  "excludedDraftCount": zod.number(),
+  "excludedZeroAmountCount": zod.number(),
+  "excluded250InvoiceNumber": zod.string().nullable(),
+  "classifications": zod.array(zod.object({
+  "status": zod.number().nullable(),
+  "type": zod.number().nullable(),
+  "isDraft": zod.boolean(),
+  "isVoid": zod.boolean(),
+  "count": zod.number(),
+  "grossInvoiceAmount": zod.number(),
+  "netBilledWithTax": zod.number()
+}))
+}),
   "total2026PaymentsReceived": zod.number(),
   "perProject": zod.record(zod.string(), zod.object({
+  "exact": zod.object({
   "hours": zod.number(),
   "invoicedAmount": zod.number(),
   "paymentsReceived": zod.number()
+}),
+  "rolledUp": zod.object({
+  "hours": zod.number(),
+  "invoicedAmount": zod.number(),
+  "paymentsReceived": zod.number()
+})
 }))
 })
 
