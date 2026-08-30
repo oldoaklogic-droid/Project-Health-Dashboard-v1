@@ -332,6 +332,7 @@ function ManagerView() {
 }
 
 function AdminView({ dashboard, currentUserId, onDashboardReload }) {
+  const selfAdminRoleError = "You cannot remove or downgrade your own administrator role.";
   const [status, setStatus] = useState(null);
   const [users, setUsers] = useState([]);
   const [message, setMessage] = useState("");
@@ -372,6 +373,10 @@ function AdminView({ dashboard, currentUserId, onDashboardReload }) {
     }
   };
   const updateRole = async (userId, role) => {
+    if (userId === currentUserId && role !== "admin") {
+      setMessage(selfAdminRoleError);
+      return;
+    }
     setMessage("Saving access role…");
     try {
       const response = await fetch(`/api/admin/users/${encodeURIComponent(userId)}/role`, {
@@ -381,7 +386,9 @@ function AdminView({ dashboard, currentUserId, onDashboardReload }) {
         body: JSON.stringify({ role: role || null }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error ?? "The user role could not be saved.");
+      if (!response.ok) {
+        throw new Error(payload.error ?? "The user role could not be saved.");
+      }
       setUsers((current) => current.map((user) => user.id === userId ? { ...user, role: payload.role } : user));
       setMessage("Access role saved.");
     } catch (caught) {
@@ -396,7 +403,7 @@ function AdminView({ dashboard, currentUserId, onDashboardReload }) {
         <span className="overline">Restricted area</span><h2>Admin controls</h2>
         <p className="muted">Connection health, controlled data refresh, and invitation-only access.</p>
       </div>
-      {message && <div className="notice admin-message" role="status" data-testid="status-admin-message">{message}</div>}
+      {message && <div className="notice admin-message" role="status" aria-live="polite" data-testid="status-admin-message">{message}</div>}
       {loading ? <div className="notice" data-testid="status-admin-loading">Loading protected admin data…</div> : <>
       <div className="admin-status-grid">
         <Blueprint className="admin-card"><span className="overline">BQE connection</span><strong data-testid="status-bqe-connection">{status?.connection.configured ? "Connected" : "Needs attention"}</strong><p className="muted">{status?.connection.apiHost ?? "No API endpoint persisted"}</p><small className="muted">Refresh token source: {status?.connection.tokenSource ?? "—"}</small></Blueprint>

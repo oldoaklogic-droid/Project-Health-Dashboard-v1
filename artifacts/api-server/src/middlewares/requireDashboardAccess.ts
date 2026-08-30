@@ -3,6 +3,19 @@ import { clerkClient, getAuth } from "@clerk/express";
 
 export type DashboardRole = "viewer" | "editor" | "admin";
 
+export function isAdminSelfRoleChange(
+  currentUserId: string | undefined,
+  currentRole: DashboardRole | undefined,
+  targetUserId: string,
+  requestedRole: DashboardRole | null,
+): boolean {
+  return (
+    currentRole === "admin" &&
+    currentUserId === targetUserId &&
+    requestedRole !== "admin"
+  );
+}
+
 async function approvedRole(userId: string): Promise<DashboardRole | undefined> {
   const user = await clerkClient.users.getUser(userId);
   const role = user.publicMetadata.dashboardRole;

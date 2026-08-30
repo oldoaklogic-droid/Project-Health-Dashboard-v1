@@ -10,6 +10,7 @@ import { BqeConnectionError, getBqeAccessToken } from "../lib/bqe";
 import {
   requireDashboardAccess,
   requireDashboardAdmin,
+  isAdminSelfRoleChange,
 } from "../middlewares/requireDashboardAccess";
 import {
   getLatestBqeReconciliation,
@@ -177,6 +178,19 @@ router.patch("/admin/users/:userId/role", requireDashboardAdmin, async (req, res
     requestedRole !== "admin"
   ) {
     res.status(400).json({ error: "Role must be viewer, editor, admin, or null." });
+    return;
+  }
+  if (
+    isAdminSelfRoleChange(
+      res.locals.userId,
+      res.locals.dashboardRole,
+      userId,
+      requestedRole,
+    )
+  ) {
+    res.status(403).json({
+      error: "You cannot remove or downgrade your own administrator role.",
+    });
     return;
   }
   const user = await clerkClient.users.getUser(userId);

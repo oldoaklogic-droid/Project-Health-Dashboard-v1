@@ -9,6 +9,7 @@
     "bqe:pull": "pnpm run build && node --enable-source-maps ./dist/run-bqe-pull.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "smoke:auth": "node ./scripts/clerk-route-smoke.mjs",
+    "test:authorization": "node --import tsx --test ./src/middlewares/requireDashboardAccess.test.ts",
     "test:bqe": "DATABASE_URL=postgresql://fixture:fixture@localhost:5432/fixture node --import tsx --test ./src/lib/bqePull.test.ts",
     "test:dashboard": "node --import tsx --test ./src/lib/dashboardBqe.test.ts",
     "typecheck": "pnpm --filter @workspace/db run build && tsc -p tsconfig.json --noEmit"
