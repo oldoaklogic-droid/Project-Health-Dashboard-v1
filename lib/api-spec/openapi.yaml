@@ -111,6 +111,49 @@ paths:
           description: BQE request failed
         "503":
           description: BQE authorization or configuration requires attention
+  /bqe/pull:
+    post:
+      operationId: runBqePhase1Pull
+      tags: [bqe]
+      summary: Run the read-only BQE Phase 1 pull
+      description: Administrator-only on-demand import. All upstream BQE object requests are GET requests.
+      responses:
+        "200":
+          description: All BQE object pulls and reconciliation completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BqePullResult"
+        "207":
+          description: Pull completed with one or more independently failed object types
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BqePullResult"
+        "401":
+          description: Authentication required
+        "403":
+          description: Administrator approval required
+        "500":
+          description: Pull could not complete
+  /bqe/reconciliation:
+    get:
+      operationId: getBqeReconciliation
+      tags: [bqe]
+      summary: Get the latest BQE reconciliation summary
+      responses:
+        "200":
+          description: Latest persisted BQE reconciliation summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BqeReconciliation"
+        "401":
+          description: Authentication required
+        "403":
+          description: Dashboard access approval required
+        "404":
+          description: No BQE pull has completed yet
 components:
   schemas:
     HealthStatus:
@@ -120,6 +163,57 @@ components:
           type: string
       required:
         - status
+    BqeObjectCounts:
+      type: object
+      required: [project, timeentry, activity, budget, invoice, payment]
+      properties:
+        project: { type: number }
+        timeentry: { type: number }
+        activity: { type: number }
+        budget: { type: number }
+        invoice: { type: number }
+        payment: { type: number }
+    BqeProjectReconciliation:
+      type: object
+      required: [hours, invoicedAmount, paymentsReceived]
+      properties:
+        hours: { type: number }
+        invoicedAmount: { type: number }
+        paymentsReceived: { type: number }
+    BqeReconciliation:
+      type: object
+      required: [pullRunId, completedAt, objectCounts, total2026Hours, total2026InvoicedAmount, total2026PaymentsReceived, perProject]
+      properties:
+        pullRunId: { type: string }
+        completedAt: { type: string, format: date-time }
+        objectCounts:
+          $ref: "#/components/schemas/BqeObjectCounts"
+        total2026Hours: { type: number }
+        total2026InvoicedAmount: { type: number }
+        total2026PaymentsReceived: { type: number }
+        perProject:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/BqeProjectReconciliation"
+    BqePullResult:
+      type: object
+      required: [pullRunId, status, startedAt, completedAt, objectCounts, errors, reconciliation]
+      properties:
+        pullRunId: { type: string }
+        status:
+          type: string
+          enum: [completed, partial, failed]
+        startedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
+        objectCounts:
+          $ref: "#/components/schemas/BqeObjectCounts"
+        errors:
+          type: object
+          additionalProperties: { type: string }
+        reconciliation:
+          oneOf:
+            - $ref: "#/components/schemas/BqeReconciliation"
+            - type: "null"
     Project:
       type: object
       required: [code, name, client, pm, priority, overall, confidence, contractValue, contractValueVisible, budgetExists, pctAvail, pctComplete, dueAvail, dueDate, recent90, laborWip, expenseWip, openAr, exposure, deliverable, etcHours, scopeNote, blocker, nextAction, owner, actionDue, lastContact, pmUpdate]

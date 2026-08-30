@@ -9,6 +9,54 @@ export interface HealthStatus {
   status: string;
 }
 
+export interface BqeObjectCounts {
+  project: number;
+  timeentry: number;
+  activity: number;
+  budget: number;
+  invoice: number;
+  payment: number;
+}
+
+export interface BqeProjectReconciliation {
+  hours: number;
+  invoicedAmount: number;
+  paymentsReceived: number;
+}
+
+export type BqeReconciliationPerProject = {[key: string]: BqeProjectReconciliation};
+
+export interface BqeReconciliation {
+  pullRunId: string;
+  completedAt: string;
+  objectCounts: BqeObjectCounts;
+  total2026Hours: number;
+  total2026InvoicedAmount: number;
+  total2026PaymentsReceived: number;
+  perProject: BqeReconciliationPerProject;
+}
+
+export type BqePullResultStatus = typeof BqePullResultStatus[keyof typeof BqePullResultStatus];
+
+
+export const BqePullResultStatus = {
+  completed: 'completed',
+  partial: 'partial',
+  failed: 'failed',
+} as const;
+
+export type BqePullResultErrors = {[key: string]: string};
+
+export interface BqePullResult {
+  pullRunId: string;
+  status: BqePullResultStatus;
+  startedAt: string;
+  completedAt: string;
+  objectCounts: BqeObjectCounts;
+  errors: BqePullResultErrors;
+  reconciliation: BqeReconciliation | null;
+}
+
 export interface Project {
   code: string;
   name: string;

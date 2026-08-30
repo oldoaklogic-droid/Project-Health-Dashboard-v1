@@ -20,6 +20,8 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  BqePullResult,
+  BqeReconciliation,
   Dashboard,
   HealthStatus,
   Project,
@@ -424,6 +426,155 @@ export function useTestBqeConnection<TData = Awaited<ReturnType<typeof testBqeCo
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getTestBqeConnectionQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRunBqePhase1PullUrl = () => {
+
+
+
+
+  return `/api/bqe/pull`
+}
+
+/**
+ * Administrator-only on-demand import. All upstream BQE object requests are GET requests.
+ * @summary Run the read-only BQE Phase 1 pull
+ */
+export const runBqePhase1Pull = async ( options?: Parameters<typeof customFetch>[1]): Promise<BqePullResult> => {
+
+  return customFetch<BqePullResult>(getRunBqePhase1PullUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRunBqePhase1PullMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runBqePhase1Pull>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runBqePhase1Pull>>, TError,void, TContext> => {
+
+const mutationKey = ['runBqePhase1Pull'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runBqePhase1Pull>>, void> = () => {
+
+
+          return  runBqePhase1Pull(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunBqePhase1PullMutationResult = NonNullable<Awaited<ReturnType<typeof runBqePhase1Pull>>>
+
+    export type RunBqePhase1PullMutationError = ErrorType<void>
+
+    /**
+ * @summary Run the read-only BQE Phase 1 pull
+ */
+export const useRunBqePhase1Pull = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runBqePhase1Pull>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runBqePhase1Pull>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getRunBqePhase1PullMutationOptions(options));
+    }
+
+export const getGetBqeReconciliationUrl = () => {
+
+
+
+
+  return `/api/bqe/reconciliation`
+}
+
+/**
+ * @summary Get the latest BQE reconciliation summary
+ */
+export const getBqeReconciliation = async ( options?: Parameters<typeof customFetch>[1]): Promise<BqeReconciliation> => {
+
+  return customFetch<BqeReconciliation>(getGetBqeReconciliationUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBqeReconciliationQueryKey = () => {
+    return [
+    `/api/bqe/reconciliation`
+    ] as const;
+    }
+
+
+export const getGetBqeReconciliationQueryOptions = <TData = Awaited<ReturnType<typeof getBqeReconciliation>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBqeReconciliation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBqeReconciliationQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBqeReconciliation>>> = ({ signal }) => getBqeReconciliation({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBqeReconciliation>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBqeReconciliationQueryResult = NonNullable<Awaited<ReturnType<typeof getBqeReconciliation>>>
+export type GetBqeReconciliationQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get the latest BQE reconciliation summary
+ */
+
+export function useGetBqeReconciliation<TData = Awaited<ReturnType<typeof getBqeReconciliation>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBqeReconciliation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBqeReconciliationQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

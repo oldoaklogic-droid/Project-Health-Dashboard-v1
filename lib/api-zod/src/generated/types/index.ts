@@ -6,6 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './bqeObjectCounts';
+export * from './bqeProjectReconciliation';
+export * from './bqePullResult';
+export * from './bqePullResultErrors';
+export * from './bqePullResultStatus';
+export * from './bqeReconciliation';
+export * from './bqeReconciliationPerProject';
 export * from './coverage';
 export * from './dashboard';
 export * from './dashboardSummary';

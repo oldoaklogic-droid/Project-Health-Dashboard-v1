@@ -1,12 +1,12 @@
 import type { NextFunction, Request, Response } from "express";
 import { clerkClient, getAuth } from "@clerk/express";
 
-export type DashboardRole = "viewer" | "editor";
+export type DashboardRole = "viewer" | "editor" | "admin";
 
 async function approvedRole(userId: string): Promise<DashboardRole | undefined> {
   const user = await clerkClient.users.getUser(userId);
   const role = user.publicMetadata.dashboardRole;
-  return role === "viewer" || role === "editor" ? role : undefined;
+  return role === "viewer" || role === "editor" || role === "admin" ? role : undefined;
 }
 
 export async function requireDashboardAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -29,11 +29,27 @@ export async function requireDashboardAccess(req: Request, res: Response, next: 
 }
 
 export function requireDashboardEditor(_req: Request, res: Response, next: NextFunction): void {
-  if (res.locals.dashboardRole !== "editor") {
+  if (res.locals.dashboardRole !== "editor" && res.locals.dashboardRole !== "admin") {
     res.status(403).json({
       error: "Editor approval is required to change PM-controlled project fields.",
     });
     return;
   }
   next();
+}
+
+export async function requireDashboardAdmin(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  await requireDashboardAccess(req, res, () => {
+    if (res.locals.dashboardRole !== "admin") {
+      res.status(403).json({
+        error: "Administrator approval is required to run BQE data pulls.",
+      });
+      return;
+    }
+    next();
+  });
 }

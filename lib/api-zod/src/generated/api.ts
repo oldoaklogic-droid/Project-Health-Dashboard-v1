@@ -168,3 +168,69 @@ export const TestBqeConnectionResponseItem = zod.record(zod.string(), zod.unknow
 export const TestBqeConnectionResponse = zod.array(TestBqeConnectionResponseItem)
 
 
+/**
+ * Administrator-only on-demand import. All upstream BQE object requests are GET requests.
+ * @summary Run the read-only BQE Phase 1 pull
+ */
+export const RunBqePhase1PullResponse = zod.object({
+  "pullRunId": zod.string(),
+  "status": zod.enum(['completed', 'partial', 'failed']),
+  "startedAt": zod.coerce.date(),
+  "completedAt": zod.coerce.date(),
+  "objectCounts": zod.object({
+  "project": zod.number(),
+  "timeentry": zod.number(),
+  "activity": zod.number(),
+  "budget": zod.number(),
+  "invoice": zod.number(),
+  "payment": zod.number()
+}),
+  "errors": zod.record(zod.string(), zod.string()),
+  "reconciliation": zod.union([zod.object({
+  "pullRunId": zod.string(),
+  "completedAt": zod.coerce.date(),
+  "objectCounts": zod.object({
+  "project": zod.number(),
+  "timeentry": zod.number(),
+  "activity": zod.number(),
+  "budget": zod.number(),
+  "invoice": zod.number(),
+  "payment": zod.number()
+}),
+  "total2026Hours": zod.number(),
+  "total2026InvoicedAmount": zod.number(),
+  "total2026PaymentsReceived": zod.number(),
+  "perProject": zod.record(zod.string(), zod.object({
+  "hours": zod.number(),
+  "invoicedAmount": zod.number(),
+  "paymentsReceived": zod.number()
+}))
+}),zod.null()])
+})
+
+
+/**
+ * @summary Get the latest BQE reconciliation summary
+ */
+export const GetBqeReconciliationResponse = zod.object({
+  "pullRunId": zod.string(),
+  "completedAt": zod.coerce.date(),
+  "objectCounts": zod.object({
+  "project": zod.number(),
+  "timeentry": zod.number(),
+  "activity": zod.number(),
+  "budget": zod.number(),
+  "invoice": zod.number(),
+  "payment": zod.number()
+}),
+  "total2026Hours": zod.number(),
+  "total2026InvoicedAmount": zod.number(),
+  "total2026PaymentsReceived": zod.number(),
+  "perProject": zod.record(zod.string(), zod.object({
+  "hours": zod.number(),
+  "invoicedAmount": zod.number(),
+  "paymentsReceived": zod.number()
+}))
+})
+
+
