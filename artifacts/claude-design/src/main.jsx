@@ -37,6 +37,15 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 const clerkPubKey = publishableKeyFromHost(window.location.hostname, import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
 const hubPages = new Set(["home", "reports", "projects", "estimating", "pipeline", "manager", "admin"]);
+const pageMeta = {
+  home: { code: "COVER", label: "CDI Operations Hub", title: "Operations index", description: "The operating system for Complete Design's projects, estimates, and reporting." },
+  reports: { code: "R-100", label: "Reports", title: "Project health reports", description: "Review controlled project evidence, financials, and PM updates." },
+  projects: { code: "P-100", label: "Projects", title: "Live project tracking", description: "Review reconciled records for active projects." },
+  estimating: { code: "E-100", label: "Estimating", title: "Project estimating", description: "Prepare consistent scope, effort, and fee decisions." },
+  pipeline: { code: "L-100", label: "Pipeline", title: "Project pipeline", description: "Track the path from lead to active project." },
+  manager: { code: "M-100", label: "Manager Dashboard", title: "Manager dashboard", description: "Prepare for Tuesday review with a clear team view." },
+  admin: { code: "X-100", label: "Admin", title: "System administration", description: "Manage connection health, refreshes, and dashboard access." },
+};
 const pageFromPath = (pathname) => {
   const relative = pathname.slice(basePath.length).replace(/^\/+|\/+$/g, "");
   const page = relative.split("/")[0] || "home";
@@ -46,32 +55,32 @@ const pathForPage = (page) => `${basePath}${page === "home" ? "/" : `/${page}`}`
 
 const clerkAppearance = {
   variables: {
-    colorPrimary: "#38bdf8",
-    colorForeground: "#f0f4f8",
-    colorMutedForeground: "#94a3b8",
-    colorBackground: "#0f1c29",
-    colorInput: "#16283b",
-    colorInputForeground: "#f0f4f8",
-    colorDanger: "#ef4444",
-    colorNeutral: "#475569",
-    fontFamily: "\"Plus Jakarta Sans\", system-ui, sans-serif",
-    borderRadius: "6px",
+    colorPrimary: "#3F78B0",
+    colorForeground: "#16283E",
+    colorMutedForeground: "#587087",
+    colorBackground: "#FFFFFF",
+    colorInput: "#FFFFFF",
+    colorInputForeground: "#16283E",
+    colorDanger: "#B9472A",
+    colorNeutral: "#B8D4E8",
+    fontFamily: "\"Inter\", system-ui, sans-serif",
+    borderRadius: "2px",
   },
   options: {
     logoPlacement: "inside",
     logoLinkUrl: basePath || "/",
-    logoImageUrl: `${window.location.origin}${basePath}/logo.svg`,
+    logoImageUrl: `${window.location.origin}${basePath}/cdi-logo-color.webp`,
   },
   elements: {
-    cardBox: { backgroundColor: "#0f1c29", border: "1px solid rgba(56, 189, 248, 0.15)", borderRadius: "8px", width: "440px", maxWidth: "100%" },
-    card: { boxShadow: "0 8px 30px rgba(56, 189, 248, 0.1)", backgroundColor: "transparent" },
+    cardBox: { backgroundColor: "#FFFFFF", border: "1px solid #B8D4E8", borderRadius: "2px", width: "440px", maxWidth: "100%" },
+    card: { boxShadow: "0 8px 30px rgba(22, 40, 62, 0.08)", backgroundColor: "transparent" },
     footer: { boxShadow: "none", backgroundColor: "transparent" },
-    headerTitle: { color: "#f0f4f8", fontFamily: "\"Plus Jakarta Sans\", system-ui, sans-serif", fontWeight: 700 },
-    headerSubtitle: { color: "#94a3b8" },
-    formFieldLabel: { color: "#f0f4f8" },
-    formButtonPrimary: { backgroundColor: "#38bdf8", color: "#071018", fontWeight: 600 },
-    footerActionLink: { color: "#38bdf8" },
-    footerActionText: { color: "#94a3b8" },
+    headerTitle: { color: "#16283E", fontFamily: "\"Archivo\", system-ui, sans-serif", fontWeight: 700 },
+    headerSubtitle: { color: "#587087" },
+    formFieldLabel: { color: "#16283E" },
+    formButtonPrimary: { backgroundColor: "#3F78B0", color: "#FFFFFF", fontWeight: 600 },
+    footerActionLink: { color: "#3F78B0" },
+    footerActionText: { color: "#587087" },
   },
 };
 
@@ -79,58 +88,74 @@ function Blueprint({ children, className = "" }) {
   return <section className={`blueprint ${className}`}>{children}</section>;
 }
 
-// Hub Views
-function HomeView({ onNavigate, isAdmin }) {
+function SheetTitleBlock({ page, userName, accessLabel = "Approved user" }) {
+  const meta = pageMeta[page] ?? pageMeta.home;
+  const date = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "2-digit" }).format(new Date());
   return (
-    <div className="home-view fade-in" data-testid="home-view">
-      <div className="home-hero">
-        <h1>Complete Design, Inc.</h1>
+    <footer className="title-block" data-testid="title-block">
+      <div className="title-cell title-firm"><img src={`${basePath}/cdi-logo-white.png`} alt="Complete Design, Inc." /><span>Complete Design, Inc.</span></div>
+      <div className="title-cell title-hub"><span className="title-label">Project set</span><strong>CDI OPERATIONS HUB</strong></div>
+      <div className="title-cell"><span className="title-label">Date</span><strong>{date}</strong></div>
+      <div className="title-cell"><span className="title-label">{accessLabel}</span><strong>{userName || "Invitation only"}</strong></div>
+      <div className="title-cell title-sheet"><span className="title-label">Sheet</span><strong>{page === "home" ? "SHEET 01" : `${meta.code}`}</strong></div>
+    </footer>
+  );
+}
+
+function SheetPage({ page, userName, children }) {
+  const meta = pageMeta[page] ?? pageMeta.home;
+  const status = ["reports", "projects", "admin", "home"].includes(page) ? "ISSUED" : `IN DEVELOPMENT — PHASE ${page === "estimating" ? "2" : page === "manager" ? "6" : "7"}`;
+  return (
+    <div className={`sheet-page sheet-page-${page}`} data-testid={`sheet-page-${page}`}>
+      {page !== "home" && (
+        <header className="wing-heading">
+          <div>
+            <span className="sheet-code heading-code">{meta.code}</span>
+            <span className="sheet-label">{meta.label}</span>
+            <h1>{meta.title}</h1>
+            <p>{meta.description}</p>
+          </div>
+          <span className={`status-stamp heading-stamp ${status === "ISSUED" ? "issued" : "development"}`}>{status}</span>
+        </header>
+      )}
+      {children}
+      <SheetTitleBlock page={page} userName={userName} />
+    </div>
+  );
+}
+
+// Hub Views
+function HomeView({ onNavigate, isAdmin, userName }) {
+  const wings = [
+    ["R-100", "Reports", "Review project health, financials, and Tuesday actions.", "issued", "reports"],
+    ["P-100", "Projects", "Open reconciled records for active projects.", "issued", "projects"],
+    ["E-100", "Estimating", "Prepare scope, effort, and fee decisions.", "phase2", "estimating"],
+    ["L-100", "Pipeline", "Track leads through contract and project start.", "phase7", "pipeline"],
+    ["M-100", "Manager Dashboard", "Prepare team priorities for Tuesday review.", "phase6", "manager"],
+  ];
+  if (isAdmin) wings.push(["X-100", "Admin", "Manage BQE refreshes and dashboard access.", "issued", "admin"]);
+  return (
+    <div className="home-view sheet-content fade-in" data-testid="home-view">
+      <img className="contour-lines" src={`${basePath}/contour-lines.svg`} alt="" aria-hidden="true" />
+      <div className="home-hero drawing-hero">
+        <div className="hero-mark"><img src={`${basePath}/cdi-logo-color.webp`} alt="Complete Design, Inc." /></div>
+        <span className="sheet-label">Complete Design, Inc.</span>
+        <h1>CDI Operations Hub</h1>
         <p className="tagline">Where Vision Becomes Legacy</p>
+        <p className="hero-sentence">The operating system for Complete Design's projects, estimates, and reporting.</p>
       </div>
-      <div className="home-cards-grid">
-        <button className="nav-card" onClick={() => onNavigate('reports')} data-testid="nav-card-reports">
-           <div className="icon-wrapper"><BarChartIcon /></div>
-           <div className="nav-card-content">
-             <h3>Reports</h3>
-             <p>Executive summaries, project health, and Tuesday reviews.</p>
-           </div>
-        </button>
-        <button className="nav-card" onClick={() => onNavigate('projects')} data-testid="nav-card-projects">
-           <div className="icon-wrapper"><FolderIcon /></div>
-           <div className="nav-card-content">
-             <h3>Projects</h3>
-             <p>Live reconciled records and targeted project tracking.</p>
-           </div>
-        </button>
-        <button className="nav-card" onClick={() => onNavigate('estimating')} data-testid="nav-card-estimating">
-           <div className="icon-wrapper"><CalculatorIcon /></div>
-           <div className="nav-card-content">
-             <h3>Estimating</h3>
-             <p>Generate and manage project estimates.</p>
-           </div>
-        </button>
-        <button className="nav-card" onClick={() => onNavigate('pipeline')} data-testid="nav-card-pipeline">
-           <div className="icon-wrapper"><TrendingUpIcon /></div>
-           <div className="nav-card-content">
-             <h3>Pipeline</h3>
-             <p>Track upcoming opportunities and forecast revenue.</p>
-           </div>
-        </button>
-        <button className="nav-card" onClick={() => onNavigate('manager')} data-testid="nav-card-manager">
-           <div className="icon-wrapper"><UsersIcon /></div>
-           <div className="nav-card-content">
-             <h3>Manager Dashboard</h3>
-             <p>Resource allocation and team performance metrics.</p>
-           </div>
-        </button>
-        {isAdmin && <button className="nav-card admin-nav-card" onClick={() => onNavigate('admin')} data-testid="nav-card-admin">
-           <div className="icon-wrapper"><SettingsIcon /></div>
-           <div className="nav-card-content">
-             <h3>Admin</h3>
-             <p>Monitor BQE health, run controlled pulls, and manage dashboard access.</p>
-           </div>
-        </button>}
-      </div>
+      <section className="drawing-index" aria-labelledby="drawing-index-title">
+        <div className="index-heading"><span className="sheet-label">Drawing index</span><h2 id="drawing-index-title">Operations sheets</h2><span className="sheet-label">Issued for internal use</span></div>
+        <div className="index-table">
+          <div className="index-table-head"><span>Sheet</span><span>Wing</span><span>Description</span><span>Status</span></div>
+          {wings.map(([code, name, description, status, page]) => (
+            <button className="index-row" key={code} onClick={() => onNavigate(page)} data-testid={`index-${page}`}>
+              <span className="sheet-code">{code}</span><strong>{name}</strong><span className="index-description">{description}</span>
+              <span className={`status-stamp ${status === "issued" ? "issued" : "development"}`}>{status === "issued" ? "ISSUED" : `IN DEVELOPMENT — PHASE ${status.replace("phase", "")}`}</span>
+            </button>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
@@ -393,6 +418,7 @@ function AdminView({ dashboard, currentUserId, onDashboardReload }) {
 
 // App Shell
 function DashboardApp() {
+  const { user } = useUser();
   const [data, setData] = useState(null);
   const [access, setAccess] = useState(null);
   const [page, setPage] = useState(() => pageFromPath(window.location.pathname));
@@ -446,6 +472,8 @@ function DashboardApp() {
     document.querySelector(".hub-main")?.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const userName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.primaryEmailAddress?.emailAddress || "Approved user";
+
   const openCard = (code) => {
     setSelectedCode(code);
     navigate("reports");
@@ -467,41 +495,41 @@ function DashboardApp() {
 
   return (
     <div className="hub-layout">
-      <aside className="hub-sidebar">
-        <div className="hub-brand">
-          <span className="brand-mark"><span /></span>
-          <span className="brand-text">CDI Operations Hub</span>
-        </div>
-        <nav className="hub-nav">
-          <button className={page === 'home' ? 'active' : ''} onClick={() => navigate('home')} data-testid="sidebar-home"><HomeIcon /> Home</button>
-          <button className={page === 'reports' ? 'active' : ''} onClick={() => navigate('reports')} data-testid="sidebar-reports"><BarChartIcon /> Reports</button>
-          <button className={page === 'projects' ? 'active' : ''} onClick={() => navigate('projects')} data-testid="sidebar-projects"><FolderIcon /> Projects</button>
-          <button className={page === 'estimating' ? 'active' : ''} onClick={() => navigate('estimating')} data-testid="sidebar-estimating"><CalculatorIcon /> Estimating</button>
-          <button className={page === 'pipeline' ? 'active' : ''} onClick={() => navigate('pipeline')} data-testid="sidebar-pipeline"><TrendingUpIcon /> Pipeline</button>
-          <button className={page === 'manager' ? 'active' : ''} onClick={() => navigate('manager')} data-testid="sidebar-manager"><UsersIcon /> Manager Dashboard</button>
-          {access?.isAdmin && <button className={page === 'admin' ? 'active' : ''} onClick={() => navigate('admin')} data-testid="sidebar-admin"><SettingsIcon /> Admin</button>}
-        </nav>
-        <div className="hub-user">
-           <AccountActions />
-        </div>
-      </aside>
-      <main className="hub-main">
-         {error ? (
-           <div className="notice error fade-in">{error} <button onClick={loadDashboard}>Try again</button></div>
-         ) : !data ? (
-           <div className="notice loading-notice fade-in">Loading operations data...</div>
-         ) : (
-           <>
-              {page === 'home' && <HomeView onNavigate={navigate} isAdmin={access?.isAdmin} />}
-             {page === 'reports' && <ReportsView data={data} access={access} view={view} setView={setView} query={query} setQuery={setQuery} pmFilter={pmFilter} setPmFilter={setPmFilter} priority={priority} setPriority={setPriority} selectedCode={selectedCode} setSelectedCode={setSelectedCode} updateProject={updateProject} openCard={openCard} />}
-             {page === 'projects' && <ProjectsView projects={data.projects} onOpen={openCard} />}
+      <div className="sheet-frame">
+        <header className="hub-header">
+          <button className="hub-brand" onClick={() => navigate("home")} aria-label="Go to CDI Operations Hub home">
+            <img src={`${basePath}/cdi-logo-color.webp`} alt="Complete Design, Inc." />
+            <span><b>CDI</b><em>Operations Hub</em></span>
+          </button>
+          <nav className="hub-nav" aria-label="Primary navigation">
+            <button className={page === 'home' ? 'active' : ''} onClick={() => navigate('home')} data-testid="sidebar-home"><HomeIcon /> Home</button>
+            <button className={page === 'reports' ? 'active' : ''} onClick={() => navigate('reports')} data-testid="sidebar-reports"><BarChartIcon /> Reports</button>
+            <button className={page === 'projects' ? 'active' : ''} onClick={() => navigate('projects')} data-testid="sidebar-projects"><FolderIcon /> Projects</button>
+            <button className={page === 'estimating' ? 'active' : ''} onClick={() => navigate('estimating')} data-testid="sidebar-estimating"><CalculatorIcon /> Estimating</button>
+            <button className={page === 'pipeline' ? 'active' : ''} onClick={() => navigate('pipeline')} data-testid="sidebar-pipeline"><TrendingUpIcon /> Pipeline</button>
+            <button className={page === 'manager' ? 'active' : ''} onClick={() => navigate('manager')} data-testid="sidebar-manager"><UsersIcon /> Manager</button>
+            {access?.isAdmin && <button className={page === 'admin' ? 'active' : ''} onClick={() => navigate('admin')} data-testid="sidebar-admin"><SettingsIcon /> Admin</button>}
+          </nav>
+          <div className="hub-user"><span>{userName}</span><AccountActions /></div>
+        </header>
+        <main className="hub-main">
+          {error ? (
+            <div className="notice error fade-in">{error} <button onClick={loadDashboard}>Try again</button></div>
+          ) : !data ? (
+            <div className="notice loading-notice fade-in">Loading operations data...</div>
+          ) : (
+            <SheetPage page={page} userName={userName}>
+              {page === 'home' && <HomeView onNavigate={navigate} isAdmin={access?.isAdmin} userName={userName} />}
+              {page === 'reports' && <ReportsView data={data} access={access} view={view} setView={setView} query={query} setQuery={setQuery} pmFilter={pmFilter} setPmFilter={setPmFilter} priority={priority} setPriority={setPriority} selectedCode={selectedCode} setSelectedCode={setSelectedCode} updateProject={updateProject} openCard={openCard} />}
+              {page === 'projects' && <ProjectsView projects={data.projects} onOpen={openCard} />}
               {page === 'estimating' && <EstimatingView />}
               {page === 'pipeline' && <PipelineView />}
               {page === 'manager' && <ManagerView />}
               {page === 'admin' && access?.isAdmin && <AdminView dashboard={data} currentUserId={access.userId} onDashboardReload={loadDashboard} />}
-           </>
-         )}
-      </main>
+            </SheetPage>
+          )}
+        </main>
+      </div>
     </div>
   );
 }
@@ -612,13 +640,21 @@ function AccountActions() {
 
 function AccessLanding() {
   return <div className="access-landing fade-in">
-    <div className="brand"><span className="brand-mark"><span /></span><span className="brand-text">CDI Operations Hub</span></div>
-    <Blueprint className="access-card">
-      <span className="overline muted">Controlled source</span>
-      <h1>Project Health Dashboard <b>v1</b></h1>
-      <p className="muted">This controlled portfolio view contains client, financial, and PM data. Access is invitation-only.</p>
-      <div className="access-actions"><a className="primary" href={`${basePath}/sign-in`} data-testid="link-sign-in">Sign in</a></div>
-    </Blueprint>
+    <div className="access-sheet sheet-frame">
+      <div className="access-page">
+        <img className="contour-lines" src={`${basePath}/contour-lines.svg`} alt="" aria-hidden="true" />
+        <div className="access-hero">
+          <img src={`${basePath}/cdi-logo-color.webp`} alt="Complete Design, Inc." />
+          <span className="sheet-label">Complete Design, Inc.</span>
+          <h1>CDI Operations Hub</h1>
+          <p className="tagline">Where Vision Becomes Legacy</p>
+          <p>The operating system for Complete Design's projects, estimates, and reporting.</p>
+          <a className="primary" href={`${basePath}/sign-in`} data-testid="link-sign-in">Sign in</a>
+          <span className="access-note">Access is invitation-only.</span>
+        </div>
+      </div>
+      <SheetTitleBlock page="home" userName="Invitation only" accessLabel="Access" />
+    </div>
   </div>;
 }
 
