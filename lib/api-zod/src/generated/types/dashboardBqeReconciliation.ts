@@ -7,7 +7,10 @@
  */
 
 export interface DashboardBqeReconciliation {
+  reportingYear: number;
+  asOfDate: string;
   hours: number;
+  excludedFutureHours: number;
   invoicedAmount: number;
   paidAmount: number;
 }

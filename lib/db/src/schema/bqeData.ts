@@ -131,8 +131,11 @@ export const bqeReconciliationTable = pgTable("bqe_reconciliation", {
   id: integer("id").primaryKey(),
   pullRunId: text("pull_run_id").notNull(),
   completedAt: timestamp("completed_at", { withTimezone: true }).notNull(),
+  reportingYear: integer("reporting_year"),
+  asOfDate: date("as_of_date", { mode: "string" }),
   objectCounts: jsonb("object_counts").$type<Record<string, number>>().notNull(),
   total2026Hours: numeric("total_2026_hours").notNull(),
+  excludedFutureHours: numeric("excluded_future_hours"),
   total2026InvoicedAmount: numeric("total_2026_invoiced_amount").notNull(),
   total2026PaymentsReceived: numeric("total_2026_payments_received").notNull(),
   perProject: jsonb("per_project")

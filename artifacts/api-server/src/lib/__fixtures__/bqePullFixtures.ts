@@ -89,3 +89,30 @@ export const paymentAllocationFixture = [
     ],
   },
 ];
+
+export const futureDatedTimeFixture = [
+  {
+    id: "time-current",
+    date: "2026-08-30",
+    actualHours: 1_250,
+    projectCode: "23-0091",
+  },
+  {
+    id: "time-future-a",
+    date: "2026-09-01",
+    actualHours: 200,
+    projectCode: "23-0091",
+  },
+  {
+    id: "time-future-b",
+    date: "2026-12-15",
+    actualHours: 170,
+    projectCode: "23-0147",
+  },
+  {
+    id: "time-next-year",
+    date: "2027-01-01",
+    actualHours: 900,
+    projectCode: "23-0147",
+  },
+];

@@ -37,7 +37,10 @@ export const GetDashboardResponse = zod.object({
   "paidAmount": zod.number()
 }),
   "reconciliation": zod.union([zod.object({
+  "reportingYear": zod.number(),
+  "asOfDate": zod.string(),
   "hours": zod.number(),
+  "excludedFutureHours": zod.number(),
   "invoicedAmount": zod.number(),
   "paidAmount": zod.number()
 }),zod.null()])
@@ -235,6 +238,8 @@ export const RunBqePhase1PullResponse = zod.object({
   "reconciliation": zod.union([zod.object({
   "pullRunId": zod.string(),
   "completedAt": zod.coerce.date(),
+  "reportingYear": zod.number(),
+  "asOfDate": zod.string(),
   "objectCounts": zod.object({
   "project": zod.number(),
   "timeentry": zod.number(),
@@ -244,6 +249,7 @@ export const RunBqePhase1PullResponse = zod.object({
   "payment": zod.number()
 }),
   "total2026Hours": zod.number(),
+  "excludedFutureHours": zod.number(),
   "total2026InvoicedAmount": zod.number(),
   "total2026PaymentsReceived": zod.number(),
   "perProject": zod.record(zod.string(), zod.object({
@@ -261,6 +267,8 @@ export const RunBqePhase1PullResponse = zod.object({
 export const GetBqeReconciliationResponse = zod.object({
   "pullRunId": zod.string(),
   "completedAt": zod.coerce.date(),
+  "reportingYear": zod.number(),
+  "asOfDate": zod.string(),
   "objectCounts": zod.object({
   "project": zod.number(),
   "timeentry": zod.number(),
@@ -270,6 +278,7 @@ export const GetBqeReconciliationResponse = zod.object({
   "payment": zod.number()
 }),
   "total2026Hours": zod.number(),
+  "excludedFutureHours": zod.number(),
   "total2026InvoicedAmount": zod.number(),
   "total2026PaymentsReceived": zod.number(),
   "perProject": zod.record(zod.string(), zod.object({

@@ -182,13 +182,16 @@ components:
         paymentsReceived: { type: number }
     BqeReconciliation:
       type: object
-      required: [pullRunId, completedAt, objectCounts, total2026Hours, total2026InvoicedAmount, total2026PaymentsReceived, perProject]
+      required: [pullRunId, completedAt, reportingYear, asOfDate, objectCounts, total2026Hours, excludedFutureHours, total2026InvoicedAmount, total2026PaymentsReceived, perProject]
       properties:
         pullRunId: { type: string }
         completedAt: { type: string, format: date-time }
+        reportingYear: { type: number }
+        asOfDate: { type: string }
         objectCounts:
           $ref: "#/components/schemas/BqeObjectCounts"
         total2026Hours: { type: number }
+        excludedFutureHours: { type: number }
         total2026InvoicedAmount: { type: number }
         total2026PaymentsReceived: { type: number }
         perProject:
@@ -316,9 +319,12 @@ components:
         paidAmount: { type: number }
     DashboardBqeReconciliation:
       type: object
-      required: [hours, invoicedAmount, paidAmount]
+      required: [reportingYear, asOfDate, hours, excludedFutureHours, invoicedAmount, paidAmount]
       properties:
+        reportingYear: { type: number }
+        asOfDate: { type: string }
         hours: { type: number }
+        excludedFutureHours: { type: number }
         invoicedAmount: { type: number }
         paidAmount: { type: number }
     DashboardBqeStatus:

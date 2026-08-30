@@ -20,7 +20,10 @@ import {
   requireDashboardEditor,
 } from "../middlewares/requireDashboardAccess";
 import { getLatestBqeReconciliation } from "../lib/bqePull";
-import { reconciliationForCompletedRun } from "../lib/dashboardBqe";
+import {
+  dashboardReportingPeriod,
+  reconciliationForCompletedRun,
+} from "../lib/dashboardBqe";
 
 const router: IRouter = Router();
 router.use(requireDashboardAccess);
@@ -204,7 +207,8 @@ function toProject(
   };
 }
 
-async function loadProjectBqeMetrics(): Promise<Map<string, ProjectBqeMetrics>> {
+async function loadProjectBqeMetrics(asOfDate: string): Promise<Map<string, ProjectBqeMetrics>> {
+  const reportingPeriod = dashboardReportingPeriod(asOfDate);
   const result = await db.execute<ProjectBqeMetrics>(sql`
     WITH latest_bqe_projects AS (
       SELECT DISTINCT ON (code)
@@ -222,6 +226,9 @@ async function loadProjectBqeMetrics(): Promise<Map<string, ProjectBqeMetrics>> 
     time_by_project AS (
       SELECT project_id, SUM(hours) AS actual_hours, MAX(pulled_at) AS pulled_at
       FROM bqe_time_entries
+      WHERE entry_date >= ${reportingPeriod.startDate}
+        AND entry_date < ${reportingPeriod.endDateExclusive}
+        AND entry_date <= ${reportingPeriod.asOfDate}
       GROUP BY project_id
     ),
     budget_by_code AS (
@@ -237,11 +244,17 @@ async function loadProjectBqeMetrics(): Promise<Map<string, ProjectBqeMetrics>> 
         SUM(balance) AS open_invoice_balance,
         MAX(pulled_at) AS pulled_at
       FROM bqe_invoices
+      WHERE invoice_date >= ${reportingPeriod.startDate}
+        AND invoice_date < ${reportingPeriod.endDateExclusive}
+        AND invoice_date <= ${reportingPeriod.asOfDate}
       GROUP BY project_id
     ),
     payment_by_project AS (
       SELECT project_id, SUM(amount) AS paid_amount, MAX(pulled_at) AS pulled_at
       FROM bqe_payments
+      WHERE payment_date >= ${reportingPeriod.startDate}
+        AND payment_date < ${reportingPeriod.endDateExclusive}
+        AND payment_date <= ${reportingPeriod.asOfDate}
       GROUP BY project_id
     )
     SELECT
@@ -266,18 +279,28 @@ async function loadProjectBqeMetrics(): Promise<Map<string, ProjectBqeMetrics>> 
   return new Map(result.rows.map((row) => [row.code, row]));
 }
 
-async function loadBqePortfolioTotals(): Promise<{
+async function loadBqePortfolioTotals(asOfDate: string): Promise<{
   hours: number;
   budgetHours: number;
   invoicedAmount: number;
   paidAmount: number;
 }> {
+  const reportingPeriod = dashboardReportingPeriod(asOfDate);
   const result = await db.execute<BqePortfolioTotals>(sql`
     SELECT
-      (SELECT COALESCE(SUM(hours), 0) FROM bqe_time_entries) AS hours,
+      (SELECT COALESCE(SUM(hours), 0) FROM bqe_time_entries
+        WHERE entry_date >= ${reportingPeriod.startDate}
+          AND entry_date < ${reportingPeriod.endDateExclusive}
+          AND entry_date <= ${reportingPeriod.asOfDate}) AS hours,
       (SELECT COALESCE(SUM(total_hours), 0) FROM bqe_budgets) AS "budgetHours",
-      (SELECT COALESCE(SUM(amount), 0) FROM bqe_invoices) AS "invoicedAmount",
-      (SELECT COALESCE(SUM(amount), 0) FROM bqe_payments) AS "paidAmount"
+      (SELECT COALESCE(SUM(amount), 0) FROM bqe_invoices
+        WHERE invoice_date >= ${reportingPeriod.startDate}
+          AND invoice_date < ${reportingPeriod.endDateExclusive}
+          AND invoice_date <= ${reportingPeriod.asOfDate}) AS "invoicedAmount",
+      (SELECT COALESCE(SUM(amount), 0) FROM bqe_payments
+        WHERE payment_date >= ${reportingPeriod.startDate}
+          AND payment_date < ${reportingPeriod.endDateExclusive}
+          AND payment_date <= ${reportingPeriod.asOfDate}) AS "paidAmount"
   `);
   const row = result.rows[0];
   return {
@@ -326,10 +349,8 @@ function summarize(rows: EnrichedProject[]) {
 
 router.get("/dashboard", async (req, res): Promise<void> => {
   await ensureSeeded();
-  const [rows, bqeMetrics, bqeTotals, latestRuns, reconciliation] = await Promise.all([
+  const [rows, latestRuns, reconciliation] = await Promise.all([
     db.select().from(projectsTable).orderBy(asc(projectsTable.code)),
-    loadProjectBqeMetrics(),
-    loadBqePortfolioTotals(),
     db
       .select()
       .from(bqePullRunsTable)
@@ -340,6 +361,14 @@ router.get("/dashboard", async (req, res): Promise<void> => {
   ]);
   const latestRun = latestRuns[0] ?? null;
   const usableReconciliation = reconciliationForCompletedRun(latestRun, reconciliation);
+  const asOfDate =
+    usableReconciliation?.asOfDate ??
+    latestRun?.completedAt?.toISOString().slice(0, 10) ??
+    new Date().toISOString().slice(0, 10);
+  const [bqeMetrics, bqeTotals] = await Promise.all([
+    loadProjectBqeMetrics(asOfDate),
+    loadBqePortfolioTotals(asOfDate),
+  ]);
   const projects = rows.map((row) =>
     toProject(
       row,
@@ -373,7 +402,10 @@ router.get("/dashboard", async (req, res): Promise<void> => {
       totals: bqeTotals,
       reconciliation: usableReconciliation
         ? {
+            reportingYear: usableReconciliation.reportingYear,
+            asOfDate: usableReconciliation.asOfDate,
             hours: usableReconciliation.total2026Hours,
+            excludedFutureHours: usableReconciliation.excludedFutureHours,
             invoicedAmount: usableReconciliation.total2026InvoicedAmount,
             paidAmount: usableReconciliation.total2026PaymentsReceived,
           }
@@ -404,8 +436,7 @@ router.get("/projects/:code", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Project not found" });
     return;
   }
-  const [metrics, reconciliation, latestRuns] = await Promise.all([
-    loadProjectBqeMetrics(),
+  const [reconciliation, latestRuns] = await Promise.all([
     getLatestBqeReconciliation(),
     db
       .select()
@@ -418,6 +449,11 @@ router.get("/projects/:code", async (req, res): Promise<void> => {
     latestRuns[0] ?? null,
     reconciliation,
   );
+  const asOfDate =
+    usableReconciliation?.asOfDate ??
+    latestRuns[0]?.completedAt?.toISOString().slice(0, 10) ??
+    new Date().toISOString().slice(0, 10);
+  const metrics = await loadProjectBqeMetrics(asOfDate);
   res.json(
     GetProjectResponse.parse(
       toProject(
@@ -452,8 +488,7 @@ router.patch("/projects/:code", requireDashboardEditor, async (req, res): Promis
     return;
   }
   req.log.info({ code: row.code }, "Updated project PM overlay");
-  const [metrics, reconciliation, latestRuns] = await Promise.all([
-    loadProjectBqeMetrics(),
+  const [reconciliation, latestRuns] = await Promise.all([
     getLatestBqeReconciliation(),
     db
       .select()
@@ -466,6 +501,11 @@ router.patch("/projects/:code", requireDashboardEditor, async (req, res): Promis
     latestRuns[0] ?? null,
     reconciliation,
   );
+  const asOfDate =
+    usableReconciliation?.asOfDate ??
+    latestRuns[0]?.completedAt?.toISOString().slice(0, 10) ??
+    new Date().toISOString().slice(0, 10);
+  const metrics = await loadProjectBqeMetrics(asOfDate);
   res.json(
     UpdateProjectResponse.parse(
       toProject(

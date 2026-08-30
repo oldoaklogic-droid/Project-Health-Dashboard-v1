@@ -29,8 +29,11 @@ export type BqeReconciliationPerProject = {[key: string]: BqeProjectReconciliati
 export interface BqeReconciliation {
   pullRunId: string;
   completedAt: string;
+  reportingYear: number;
+  asOfDate: string;
   objectCounts: BqeObjectCounts;
   total2026Hours: number;
+  excludedFutureHours: number;
   total2026InvoicedAmount: number;
   total2026PaymentsReceived: number;
   perProject: BqeReconciliationPerProject;
@@ -165,7 +168,10 @@ export interface DashboardBqeTotals {
 }
 
 export interface DashboardBqeReconciliation {
+  reportingYear: number;
+  asOfDate: string;
   hours: number;
+  excludedFutureHours: number;
   invoicedAmount: number;
   paidAmount: number;
 }

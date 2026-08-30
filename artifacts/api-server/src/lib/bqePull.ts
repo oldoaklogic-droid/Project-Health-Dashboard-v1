@@ -23,6 +23,7 @@ const FIRST_PAGE = 1;
 const MAX_PAGES_PER_OBJECT = 10_000;
 const RATE_LIMIT = 80;
 const RATE_WINDOW_MS = 60_000;
+const REPORTING_YEAR = 2026;
 const YEAR_START = "2026-01-01";
 const YEAR_END = "2027-01-01";
 const PROJECT_CODES = ["23-0091", "23-0147", "24-0022"] as const;
@@ -43,8 +44,11 @@ type PullStatus = "completed" | "partial" | "failed";
 export type BqeReconciliationSummary = {
   pullRunId: string;
   completedAt: string;
+  reportingYear: number;
+  asOfDate: string;
   objectCounts: Record<BqeObjectType, number>;
   total2026Hours: number;
+  excludedFutureHours: number;
   total2026InvoicedAmount: number;
   total2026PaymentsReceived: number;
   perProject: Record<
@@ -713,6 +717,7 @@ export function reconcileBqeRecords(
   objectCounts: Record<BqeObjectType, number>,
   pulledRecords: Partial<Record<BqeObjectType, BqeRecord[]>>,
 ): BqeReconciliationSummary {
+  const asOfDate = completedAt.toISOString().slice(0, 10);
   const projectById = new Map<string, string>();
   for (const project of pulledRecords.project ?? []) {
     const code = textValue(getValue(project, ["code", "projectCode", "number"]));
@@ -728,6 +733,7 @@ export function reconcileBqeRecords(
     ]),
   ) as BqeReconciliationSummary["perProject"];
   let total2026Hours = 0;
+  let excludedFutureHours = 0;
   let total2026InvoicedAmount = 0;
   let total2026PaymentsReceived = 0;
   const addProjectValue = (
@@ -743,6 +749,8 @@ export function reconcileBqeRecords(
   };
   const inReportingYear = (date: string | null) =>
     date !== null && date >= YEAR_START && date < YEAR_END;
+  const inReportingPeriod = (date: string | null) =>
+    date !== null && inReportingYear(date) && date <= asOfDate;
   const allocationRecords = (record: BqeRecord, aliases: string[]) => {
     for (const alias of aliases) {
       const records = recordArray(getValue(record, [alias]));
@@ -800,6 +808,10 @@ export function reconcileBqeRecords(
     }
     const hours =
       numberValue(getValue(entry, ["actualHours", "hours", "billableHours"])) ?? 0;
+    if (!inReportingPeriod(entryDate)) {
+      excludedFutureHours += hours;
+      continue;
+    }
     total2026Hours += hours;
     addProjectValue(
       textValue(getValue(entry, ["projectId", "project.id"])),
@@ -810,7 +822,7 @@ export function reconcileBqeRecords(
   }
   for (const invoice of pulledRecords.invoice ?? []) {
     const invoiceDate = dateValue(getValue(invoice, ["date", "invoiceDate"]));
-    if (!inReportingYear(invoiceDate)) {
+    if (!inReportingPeriod(invoiceDate)) {
       continue;
     }
     const amount =
@@ -827,7 +839,7 @@ export function reconcileBqeRecords(
   }
   for (const payment of pulledRecords.payment ?? []) {
     const paymentDate = dateValue(getValue(payment, ["date", "paymentDate"]));
-    if (!inReportingYear(paymentDate)) {
+    if (!inReportingPeriod(paymentDate)) {
       continue;
     }
     const amount =
@@ -844,6 +856,7 @@ export function reconcileBqeRecords(
   }
 
   total2026Hours = rounded(total2026Hours);
+  excludedFutureHours = rounded(excludedFutureHours);
   total2026InvoicedAmount = rounded(total2026InvoicedAmount);
   total2026PaymentsReceived = rounded(total2026PaymentsReceived);
   for (const totals of Object.values(perProject)) {
@@ -855,8 +868,11 @@ export function reconcileBqeRecords(
   const summary: BqeReconciliationSummary = {
     pullRunId,
     completedAt: completedAt.toISOString(),
+    reportingYear: REPORTING_YEAR,
+    asOfDate,
     objectCounts,
     total2026Hours,
+    excludedFutureHours,
     total2026InvoicedAmount,
     total2026PaymentsReceived,
     perProject,
@@ -874,8 +890,11 @@ async function persistReconciliation(
       id: 1,
       pullRunId: summary.pullRunId,
       completedAt,
+      reportingYear: summary.reportingYear,
+      asOfDate: summary.asOfDate,
       objectCounts: summary.objectCounts,
       total2026Hours: String(summary.total2026Hours),
+      excludedFutureHours: String(summary.excludedFutureHours),
       total2026InvoicedAmount: String(summary.total2026InvoicedAmount),
       total2026PaymentsReceived: String(summary.total2026PaymentsReceived),
       perProject: summary.perProject,
@@ -885,8 +904,11 @@ async function persistReconciliation(
       set: {
         pullRunId: summary.pullRunId,
         completedAt,
+        reportingYear: summary.reportingYear,
+        asOfDate: summary.asOfDate,
         objectCounts: summary.objectCounts,
         total2026Hours: String(summary.total2026Hours),
+        excludedFutureHours: String(summary.excludedFutureHours),
         total2026InvoicedAmount: String(summary.total2026InvoicedAmount),
         total2026PaymentsReceived: String(summary.total2026PaymentsReceived),
         perProject: summary.perProject,
@@ -1015,13 +1037,64 @@ export async function getLatestBqeReconciliation(): Promise<BqeReconciliationSum
   if (!row) {
     return null;
   }
+  const asOfDate = row.asOfDate ?? row.completedAt.toISOString().slice(0, 10);
+  let total2026Hours = numberOrZero(row.total2026Hours);
+  let excludedFutureHours = numberOrZero(row.excludedFutureHours);
+  const perProject = structuredClone(
+    row.perProject as BqeReconciliationSummary["perProject"],
+  );
+  if (row.asOfDate === null || row.excludedFutureHours === null) {
+    const persistedHours = await db.execute<{
+      projectCode: string | null;
+      includedHours: string | null;
+      excludedFutureHours: string | null;
+    }>(sql`
+      SELECT
+        COALESCE(te.project_code, bp.code) AS "projectCode",
+        COALESCE(SUM(te.hours) FILTER (
+          WHERE te.entry_date >= ${YEAR_START} AND te.entry_date <= ${asOfDate}
+        ), 0) AS "includedHours",
+        COALESCE(SUM(te.hours) FILTER (
+          WHERE te.entry_date > ${asOfDate} AND te.entry_date < ${YEAR_END}
+        ), 0) AS "excludedFutureHours"
+      FROM bqe_time_entries te
+      LEFT JOIN bqe_projects bp ON bp.record_id = te.project_id
+      WHERE te.entry_date >= ${YEAR_START} AND te.entry_date < ${YEAR_END}
+      GROUP BY COALESCE(te.project_code, bp.code)
+    `);
+    total2026Hours = rounded(
+      persistedHours.rows.reduce(
+        (sum, hours) => sum + numberOrZero(hours.includedHours),
+        0,
+      ),
+    );
+    excludedFutureHours = rounded(
+      persistedHours.rows.reduce(
+        (sum, hours) => sum + numberOrZero(hours.excludedFutureHours),
+        0,
+      ),
+    );
+    for (const project of Object.values(perProject)) {
+      project.hours = 0;
+    }
+    for (const hours of persistedHours.rows) {
+      if (hours.projectCode && hours.projectCode in perProject) {
+        perProject[hours.projectCode as keyof typeof perProject].hours = rounded(
+          numberOrZero(hours.includedHours),
+        );
+      }
+    }
+  }
   return {
     pullRunId: row.pullRunId,
     completedAt: row.completedAt.toISOString(),
+    reportingYear: row.reportingYear ?? REPORTING_YEAR,
+    asOfDate,
     objectCounts: row.objectCounts as Record<BqeObjectType, number>,
-    total2026Hours: numberOrZero(row.total2026Hours),
+    total2026Hours,
+    excludedFutureHours,
     total2026InvoicedAmount: numberOrZero(row.total2026InvoicedAmount),
     total2026PaymentsReceived: numberOrZero(row.total2026PaymentsReceived),
-    perProject: row.perProject as BqeReconciliationSummary["perProject"],
+    perProject,
   };
 }

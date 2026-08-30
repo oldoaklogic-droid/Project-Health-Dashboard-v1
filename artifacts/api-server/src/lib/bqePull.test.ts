@@ -7,6 +7,7 @@ import {
 } from "./bqePull";
 import {
   fixtureObjectCounts,
+  futureDatedTimeFixture,
   invoiceAllocationFixture,
   partialPullFixture,
   paymentAllocationFixture,
@@ -83,6 +84,19 @@ describe("BQE pull fixtures", () => {
     assert.equal(result.perProject["23-0091"].paymentsReceived, 300);
     assert.equal(result.perProject["24-0022"].paymentsReceived, 200);
     assert.equal(result.perProject["23-0147"].paymentsReceived, 500);
+  });
+
+  it("excludes and exposes the 370 future-dated hours after the BQE as-of date", () => {
+    const result = summaryFor({
+      timeentry: futureDatedTimeFixture,
+    });
+
+    assert.equal(result.reportingYear, 2026);
+    assert.equal(result.asOfDate, "2026-08-30");
+    assert.equal(result.total2026Hours, 1_250);
+    assert.equal(result.excludedFutureHours, 370);
+    assert.equal(result.perProject["23-0091"].hours, 1_250);
+    assert.equal(result.perProject["23-0147"].hours, 0);
   });
 
   it("merges HTTP 207 field batches by record id", async () => {

@@ -6,8 +6,11 @@ export type DashboardPullRun = {
 export type DashboardReconciliation = {
   pullRunId: string;
   completedAt: string;
+  reportingYear: number;
+  asOfDate: string;
   objectCounts: Record<string, number>;
   total2026Hours: number;
+  excludedFutureHours: number;
   total2026InvoicedAmount: number;
   total2026PaymentsReceived: number;
   perProject: Record<
@@ -19,6 +22,18 @@ export type DashboardReconciliation = {
     }
   >;
 };
+
+export function dashboardReportingPeriod(asOfDate: string): {
+  startDate: string;
+  endDateExclusive: string;
+  asOfDate: string;
+} {
+  return {
+    startDate: "2026-01-01",
+    endDateExclusive: "2027-01-01",
+    asOfDate,
+  };
+}
 
 export function reconciliationForCompletedRun<T extends DashboardReconciliation>(
   latestRun: DashboardPullRun | null,

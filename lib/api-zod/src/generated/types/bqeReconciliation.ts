@@ -11,8 +11,11 @@ import type { BqeReconciliationPerProject } from './bqeReconciliationPerProject'
 export interface BqeReconciliation {
   pullRunId: string;
   completedAt: Date;
+  reportingYear: number;
+  asOfDate: string;
   objectCounts: BqeObjectCounts;
   total2026Hours: number;
+  excludedFutureHours: number;
   total2026InvoicedAmount: number;
   total2026PaymentsReceived: number;
   perProject: BqeReconciliationPerProject;
