@@ -12,7 +12,7 @@ import {
   dashboardAccessChangesTable,
   db,
 } from "@workspace/db";
-import { BqeConnectionError, getBqeAccessToken, getBqeSandboxAccessToken } from "../lib/bqe";
+import { BqeConnectionError, getBqeAccessToken } from "../lib/bqe";
 import {
   requireDashboardAccess,
   requireDashboardAdmin,
@@ -90,39 +90,6 @@ router.get("/bqe/test", async (req, res): Promise<void> => {
     res.status(502).json({
       error: "BQE project request failed unexpectedly.",
     });
-  }
-});
-
-router.get("/bqe/sandbox-test", requireDashboardAdmin, async (req, res): Promise<void> => {
-  try {
-    const { accessToken, apiBase } = await getBqeSandboxAccessToken();
-    const projectUrl = new URL(`${apiBase.replace(/\/+$/, "")}/project`);
-    projectUrl.searchParams.set("page", "1,1");
-    const response = await fetch(projectUrl, {
-      method: "GET",
-      headers: {
-        accept: "application/json",
-        authorization: `Bearer ${accessToken}`,
-      },
-    });
-    const body = await response.text();
-    if (!response.ok) {
-      req.log.error({ statusCode: response.status }, "BQE sandbox project request failed");
-      res.status(502).json({ error: `BQE sandbox project request failed with HTTP ${response.status}.` });
-      return;
-    }
-    res.type("application/json").send(body);
-  } catch (error: unknown) {
-    if (error instanceof BqeConnectionError) {
-      req.log.error(
-        { statusCode: error.statusCode, requiresReauthorization: error.requiresReauthorization },
-        "BQE sandbox connection request failed",
-      );
-      res.status(error.statusCode).json({ error: error.message });
-      return;
-    }
-    req.log.error({ err: error }, "BQE sandbox project request failed unexpectedly");
-    res.status(502).json({ error: "BQE sandbox project request failed unexpectedly." });
   }
 });
 

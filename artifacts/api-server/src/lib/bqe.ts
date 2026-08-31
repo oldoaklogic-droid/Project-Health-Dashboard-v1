@@ -45,32 +45,6 @@ let cachedToken: CachedBqeToken | null = null;
 let refreshInFlight: Promise<BqeAccessToken> | null = null;
 let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
 let reauthorizationRequired = false;
-const sandboxState: {
-  cachedToken: CachedBqeToken | null;
-  refreshInFlight: Promise<BqeAccessToken> | null;
-  reauthorizationRequired: boolean;
-} = {
-  cachedToken: null,
-  refreshInFlight: null,
-  reauthorizationRequired: false,
-};
-
-type BqeConnectionConfig = {
-  id: number;
-  refreshTokenSecret: "BQE_REFRESH_TOKEN" | "BQE_SANDBOX_REFRESH_TOKEN";
-  label: "production" | "sandbox";
-};
-
-const PRODUCTION_CONNECTION: BqeConnectionConfig = {
-  id: 1,
-  refreshTokenSecret: "BQE_REFRESH_TOKEN",
-  label: "production",
-};
-const SANDBOX_CONNECTION: BqeConnectionConfig = {
-  id: 2,
-  refreshTokenSecret: "BQE_SANDBOX_REFRESH_TOKEN",
-  label: "sandbox",
-};
 
 function reauthorizationError(): BqeConnectionError {
   return new BqeConnectionError(
@@ -80,7 +54,7 @@ function reauthorizationError(): BqeConnectionError {
 }
 
 function requiredSecret(
-  name: "BQE_CLIENT_ID" | "BQE_CLIENT_SECRET" | "BQE_REFRESH_TOKEN" | "BQE_SANDBOX_REFRESH_TOKEN",
+  name: "BQE_CLIENT_ID" | "BQE_CLIENT_SECRET" | "BQE_REFRESH_TOKEN",
 ): string {
   const value = process.env[name]?.trim();
   if (!value) {
@@ -134,21 +108,21 @@ function validEndpoint(value: unknown): value is string {
   }
 }
 
-async function getConnectionRow(config: BqeConnectionConfig): Promise<BqeConnection> {
+async function getConnectionRow(): Promise<BqeConnection> {
   const [existing] = await db
     .select()
     .from(bqeConnectionTable)
-    .where(eq(bqeConnectionTable.id, config.id));
+    .where(eq(bqeConnectionTable.id, 1));
 
   if (existing) {
     return existing;
   }
 
-  const seedRefreshToken = requiredSecret(config.refreshTokenSecret);
+  const seedRefreshToken = requiredSecret("BQE_REFRESH_TOKEN");
   const [seeded] = await db
     .insert(bqeConnectionTable)
     .values({
-      id: config.id,
+      id: 1,
       refreshToken: seedRefreshToken,
       apiEndpoint: null,
     })
@@ -156,14 +130,14 @@ async function getConnectionRow(config: BqeConnectionConfig): Promise<BqeConnect
     .returning();
 
   if (seeded) {
-    logger.info({ connectionId: config.id, environment: config.label }, "Initialized BQE connection from the configured refresh token");
+    logger.info("Initialized BQE connection from the configured refresh token");
     return seeded;
   }
 
   const [concurrent] = await db
     .select()
     .from(bqeConnectionTable)
-    .where(eq(bqeConnectionTable.id, config.id));
+    .where(eq(bqeConnectionTable.id, 1));
   if (!concurrent) {
     throw new BqeConnectionError("BQE connection state could not be initialized.", {
       statusCode: 503,
@@ -173,17 +147,16 @@ async function getConnectionRow(config: BqeConnectionConfig): Promise<BqeConnect
 }
 
 async function refreshBqeAccessToken(
-  config: BqeConnectionConfig,
   markReauthorizationRequired: () => void,
 ): Promise<RefreshedBqeAccessToken> {
-  await getConnectionRow(config);
+  await getConnectionRow();
   const clientId = requiredSecret("BQE_CLIENT_ID");
   const clientSecret = requiredSecret("BQE_CLIENT_SECRET");
   const refreshed = await db.transaction(async (tx) => {
     const [connection] = await tx
       .select()
       .from(bqeConnectionTable)
-      .where(eq(bqeConnectionTable.id, config.id))
+      .where(eq(bqeConnectionTable.id, 1))
       .for("update");
     if (!connection) {
       throw new BqeConnectionError("BQE connection state is unavailable.", {
@@ -278,7 +251,7 @@ async function refreshBqeAccessToken(
   });
 
   logger.info(
-    { connectionId: config.id, environment: config.label, apiBase: refreshed.apiBase, expiresIn: refreshed.expiresIn },
+    { apiBase: refreshed.apiBase, expiresIn: refreshed.expiresIn },
     "BQE access token refreshed; rotated refresh token persisted",
   );
   return {
@@ -304,7 +277,7 @@ export function getBqeAccessToken(): Promise<BqeAccessToken> {
   }
 
   if (!refreshInFlight) {
-    refreshInFlight = refreshBqeAccessToken(PRODUCTION_CONNECTION, () => {
+    refreshInFlight = refreshBqeAccessToken(() => {
       reauthorizationRequired = true;
     }).then((token) => {
       cachedToken = {
@@ -318,36 +291,6 @@ export function getBqeAccessToken(): Promise<BqeAccessToken> {
     });
   }
   return refreshInFlight;
-}
-
-export function getBqeSandboxAccessToken(): Promise<BqeAccessToken> {
-  if (sandboxState.reauthorizationRequired) {
-    return Promise.reject(reauthorizationError());
-  }
-  if (
-    sandboxState.cachedToken &&
-    sandboxState.cachedToken.expiresAt > Date.now() + ACCESS_TOKEN_SAFETY_WINDOW_MS
-  ) {
-    return Promise.resolve({
-      accessToken: sandboxState.cachedToken.accessToken,
-      apiBase: sandboxState.cachedToken.apiBase,
-    });
-  }
-  if (!sandboxState.refreshInFlight) {
-    sandboxState.refreshInFlight = refreshBqeAccessToken(SANDBOX_CONNECTION, () => {
-      sandboxState.reauthorizationRequired = true;
-    }).then((token) => {
-      sandboxState.cachedToken = {
-        accessToken: token.accessToken,
-        apiBase: token.apiBase,
-        expiresAt: Date.now() + token.expiresIn * 1000,
-      };
-      return { accessToken: token.accessToken, apiBase: token.apiBase };
-    }).finally(() => {
-      sandboxState.refreshInFlight = null;
-    });
-  }
-  return sandboxState.refreshInFlight;
 }
 
 export function startBqeKeepalive(): void {
