@@ -1,0 +1,30 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "T33G9ocd7dDHlPVJR01JE"
+uri = "file://reports/phase2-m0-population-projects.csv"
+type = "table"
+title = "Phase 2 M0 population projects"
+description = "All 51 latest-run population projects with code, name, fingerprint, cohort, and total hours."
+logical_id = "dbcf704d-e99f-4185-8333-7aa9a4f7177b"
+content_hash = "sha256:a8cd704f27454c71e9b172630edefbe7663ba84529199f1af764d8693c7660ce"
+size = 3161
+mtime_ms = 1788145719065
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:ef6decb8-d7da-4a88-b7d8-4fbfebca39f0/dbcf704d-e99f-4185-8333-7aa9a4f7177b/067828e9-de10-43a1-a842-1f929295e700"
+storage_version_token = "1788145719841650"
+content_type = "text/csv"
+
+[[outputs]]
+id = "VzHAoqyVZCBNaIu9zHymg"
+uri = "file://reports/phase2-m0-project-activity-hours.csv"
+type = "table"
+title = "Phase 2 M0 activity-hour breakdown"
+description = "Complete 2026 activity-code hour totals for the latest-run population projects through the run as-of date."
+logical_id = "be8b821e-f4aa-47d9-a447-c830aac49cde"
+content_hash = "sha256:703ece988b94b4148fc5e3ea343e3ebe2f2740f0e6c68915aa37c6be7ce49abf"
+size = 5843
+mtime_ms = 1788145719234
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:ef6decb8-d7da-4a88-b7d8-4fbfebca39f0/be8b821e-f4aa-47d9-a447-c830aac49cde/42a36dde-d0c7-4627-a7d2-f2ccc8dd564e"
+storage_version_token = "1788145720400325"
+content_type = "text/csv"
