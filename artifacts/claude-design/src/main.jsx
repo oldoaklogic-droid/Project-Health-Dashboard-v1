@@ -55,7 +55,7 @@ const pathForPage = (page) => `${basePath}${page === "home" ? "/" : `/${page}`}`
 
 const clerkAppearance = {
   variables: {
-    colorPrimary: "#3F78B0",
+    colorPrimary: "#3E6FA3",
     colorForeground: "#16283E",
     colorMutedForeground: "#587087",
     colorBackground: "#FFFFFF",
@@ -78,8 +78,8 @@ const clerkAppearance = {
     headerTitle: { color: "#16283E", fontFamily: "\"Archivo\", system-ui, sans-serif", fontWeight: 700 },
     headerSubtitle: { color: "#587087" },
     formFieldLabel: { color: "#16283E" },
-    formButtonPrimary: { backgroundColor: "#3F78B0", color: "#FFFFFF", fontWeight: 600 },
-    footerActionLink: { color: "#3F78B0" },
+    formButtonPrimary: { backgroundColor: "#3E6FA3", color: "#FFFFFF", fontWeight: 600 },
+    footerActionLink: { color: "#3E6FA3" },
     footerActionText: { color: "#587087" },
   },
 };
@@ -88,34 +88,43 @@ function Blueprint({ children, className = "" }) {
   return <section className={`blueprint ${className}`}>{children}</section>;
 }
 
-function SheetTitleBlock({ page, userName, accessLabel = "Approved user" }) {
+function SheetTitleBlock({ page, userName }) {
   const meta = pageMeta[page] ?? pageMeta.home;
   const date = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "2-digit" }).format(new Date());
   return (
     <footer className="title-block" data-testid="title-block">
-      <div className="title-cell title-firm"><img src={`${basePath}/cdi-logo-white.png`} alt="Complete Design, Inc." /><span>Complete Design, Inc.</span></div>
-      <div className="title-cell title-hub"><span className="title-label">Project set</span><strong>CDI OPERATIONS HUB</strong></div>
+      <div className="title-cell title-hub"><span className="title-label">Project</span><strong>CDI Operations Hub</strong></div>
       <div className="title-cell"><span className="title-label">Date</span><strong>{date}</strong></div>
-      <div className="title-cell"><span className="title-label">{accessLabel}</span><strong>{userName || "Invitation only"}</strong></div>
-      <div className="title-cell title-sheet"><span className="title-label">Sheet</span><strong>{page === "home" ? "SHEET 01" : `${meta.code}`}</strong></div>
+      <div className="title-cell"><span className="title-label">User</span><strong>{userName || "Invitation only"}</strong></div>
+      <div className="title-cell title-sheet"><span className="title-label">Sheet</span><strong>{page === "home" ? "01" : `${meta.code}`}</strong></div>
     </footer>
   );
 }
 
-function SheetPage({ page, userName, children }) {
+function SheetPage({ page, userName, data, children }) {
   const meta = pageMeta[page] ?? pageMeta.home;
-  const status = ["reports", "projects", "admin", "home"].includes(page) ? "ISSUED" : `IN DEVELOPMENT — PHASE ${page === "estimating" ? "2" : page === "manager" ? "6" : "7"}`;
+  const status = page === "reports" || page === "admin" || page === "home"
+    ? "ISSUED"
+    : `PHASE ${page === "projects" ? "2" : page === "estimating" ? "3" : page === "manager" ? "5" : "7"}`;
   return (
     <div className={`sheet-page sheet-page-${page}`} data-testid={`sheet-page-${page}`}>
       {page !== "home" && (
         <header className="wing-heading">
-          <div>
+          <div className="wing-heading-main">
             <span className="sheet-code heading-code">{meta.code}</span>
             <span className="sheet-label">{meta.label}</span>
             <h1>{meta.title}</h1>
             <p>{meta.description}</p>
           </div>
-          <span className={`status-stamp heading-stamp ${status === "ISSUED" ? "issued" : "development"}`}>{status}</span>
+          <div className="wing-heading-meta">
+            {data?.extractDate && (
+              <div className="wing-data-as-of">
+                <span className="title-label">Data as of</span>
+                <strong>{data.extractDate}</strong>
+              </div>
+            )}
+            <span className={`status-stamp heading-stamp ${status === "ISSUED" ? "issued" : "development"}`}>{status}</span>
+          </div>
         </header>
       )}
       {children}
@@ -127,31 +136,36 @@ function SheetPage({ page, userName, children }) {
 // Hub Views
 function HomeView({ onNavigate, isAdmin, userName }) {
   const wings = [
-    ["R-100", "Reports", "Review project health, financials, and Tuesday actions.", "issued", "reports"],
-    ["P-100", "Projects", "Open reconciled records for active projects.", "issued", "projects"],
-    ["E-100", "Estimating", "Prepare scope, effort, and fee decisions.", "phase2", "estimating"],
-    ["L-100", "Pipeline", "Track leads through contract and project start.", "phase7", "pipeline"],
-    ["M-100", "Manager Dashboard", "Prepare team priorities for Tuesday review.", "phase6", "manager"],
+    ["R-100", "Reports", "Financial reconciliation, project health, report pack", "issued", "reports"],
+    ["P-100", "Projects", "Budget vs actual, project health, measurement", "phase2", "projects"],
+    ["E-100", "Estimating", "Project, multi-discipline, and principal's worksheet", "phase3", "estimating"],
+    ["L-100", "Pipeline", "Lead → intake → estimate → contract → project", "phase7", "pipeline"],
+    ["M-100", "Manager dashboard", "PM financials, team KPIs, Tuesday review", "phase5", "manager"],
   ];
-  if (isAdmin) wings.push(["X-100", "Admin", "Manage BQE refreshes and dashboard access.", "issued", "admin"]);
+  if (isAdmin) wings.push(["X-100", "Admin", "BQE connection, user roles, data pull status", "issued", "admin"]);
   return (
     <div className="home-view sheet-content fade-in" data-testid="home-view">
       <img className="contour-lines" src={`${basePath}/contour-lines.svg`} alt="" aria-hidden="true" />
       <div className="home-hero drawing-hero">
         <div className="hero-mark"><img src={`${basePath}/cdi-logo-color.webp`} alt="Complete Design, Inc." /></div>
-        <span className="sheet-label">Complete Design, Inc.</span>
-        <h1>CDI Operations Hub</h1>
-        <p className="tagline">Where Vision Becomes Legacy</p>
+        <h1>Complete Design, Inc.</h1>
+        <p className="tagline">Where vision becomes legacy</p>
         <p className="hero-sentence">The operating system for Complete Design's projects, estimates, and reporting.</p>
       </div>
       <section className="drawing-index" aria-labelledby="drawing-index-title">
         <div className="index-heading"><span className="sheet-label">Drawing index</span><h2 id="drawing-index-title">Operations sheets</h2><span className="sheet-label">Issued for internal use</span></div>
         <div className="index-table">
-          <div className="index-table-head"><span>Sheet</span><span>Wing</span><span>Description</span><span>Status</span></div>
+          <div className="index-table-head"><span>Sheet</span><span>Section</span><span style={{paddingRight:0}}>Status</span></div>
           {wings.map(([code, name, description, status, page]) => (
-            <button className="index-row" key={code} onClick={() => onNavigate(page)} data-testid={`index-${page}`}>
-              <span className="sheet-code">{code}</span><strong>{name}</strong><span className="index-description">{description}</span>
-              <span className={`status-stamp ${status === "issued" ? "issued" : "development"}`}>{status === "issued" ? "ISSUED" : `IN DEVELOPMENT — PHASE ${status.replace("phase", "")}`}</span>
+            <button className="index-row" key={code} onClick={() => (page === "admin" && !isAdmin ? null : onNavigate(page))} data-testid={`index-${page}`} disabled={page === "admin" && !isAdmin}>
+              <span className="sheet-code">{code}</span>
+              <div className="index-section">
+                <strong>{name}</strong>
+                <span className="index-description">{description}</span>
+              </div>
+              <div className="index-status">
+                <span className={`status-stamp ${status === "issued" ? "issued" : "development"}`}>{status === "issued" ? "ISSUED" : `PHASE ${status.replace("phase", "")}`}</span>
+              </div>
             </button>
           ))}
         </div>
@@ -1123,7 +1137,7 @@ function DashboardApp() {
           ) : !data ? (
             <div className="notice loading-notice fade-in">Loading operations data...</div>
           ) : (
-            <SheetPage page={page} userName={userName}>
+            <SheetPage page={page} userName={userName} data={data}>
               {page === 'home' && <HomeView onNavigate={navigate} isAdmin={access?.isAdmin} userName={userName} />}
               {page === 'reports' && <ReportsView data={data} access={access} view={view} setView={setView} query={query} setQuery={setQuery} pmFilter={pmFilter} setPmFilter={setPmFilter} priority={priority} setPriority={setPriority} selectedCode={selectedCode} setSelectedCode={setSelectedCode} updateProject={updateProject} openCard={openCard} />}
               {page === 'projects' && <ProjectsView projects={data.projects} onOpen={openCard} />}
@@ -1258,7 +1272,7 @@ function AccessLanding() {
           <span className="access-note">Access is invitation-only.</span>
         </div>
       </div>
-      <SheetTitleBlock page="home" userName="Invitation only" accessLabel="Access" />
+      <SheetTitleBlock page="home" userName="Invitation only" />
     </div>
   </div>;
 }
