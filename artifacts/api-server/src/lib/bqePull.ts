@@ -998,8 +998,9 @@ export function reconcileBqeRecords(
   completedAt: Date,
   objectCounts: Record<BqeObjectType, number>,
   pulledRecords: Partial<Record<BqeObjectType, BqeRecord[]>>,
+  asOfDateOverride?: string,
 ): BqeReconciliationSummary {
-  const asOfDate = completedAt.toISOString().slice(0, 10);
+  const asOfDate = asOfDateOverride ?? completedAt.toISOString().slice(0, 10);
   const projectById = new Map<string, string>();
   const parentProjectById = new Map<string, string>();
   const rootProjectById = new Map<string, string>();
