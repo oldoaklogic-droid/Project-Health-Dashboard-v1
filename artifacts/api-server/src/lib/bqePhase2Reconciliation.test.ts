@@ -7,6 +7,7 @@ import {
   assertPhase2ControlledUniverse,
   nonProjectBucket,
   normalizedProjectStatus,
+  phase2NamePatternValue,
   reconciliationControls,
   toCsv,
 } from "./bqePhase2Reconciliation";
@@ -39,6 +40,31 @@ test("classifier never uses legacy project type when no source is selected", () 
     [{ id: "a", code: "A", name: "Alpha", type: "ExactType", projectClass: "ExactType", sourceValue: null, status: "open" }],
     [{ projectId: "a", projectCode: null, activityId: null, activityCode: "FIELD", hours: 1 }],
     mappings,
+  );
+  assert.deepEqual(output[0].failedRules, ["I-2"]);
+});
+
+test("name_pattern sourceValue derivation uses the first matching hint in ordered priority", () => {
+  const sourceValue = phase2NamePatternValue("SP-100", "Boundary Plat");
+  assert.equal(sourceValue, "Short Plat / SP");
+
+  const output = classifyProjects(
+    [{ id: "a", code: "SP-100", name: "Boundary Plat", type: null, sourceValue, status: "open" }],
+    [{ projectId: "a", projectCode: null, activityId: null, activityCode: "FIELD", hours: 1 }],
+    new Map([["Short Plat / SP", { fingerprintKey: "Short Plat", active: true }]]),
+  );
+  assert.equal(output[0].mappingSourceValue, "Short Plat / SP");
+  assert.deepEqual(output[0].failedRules, []);
+});
+
+test("name_pattern sourceValue derivation returns null without a hint and fails I-2", () => {
+  const sourceValue = phase2NamePatternValue("24-001", "Smith Residence");
+  assert.equal(sourceValue, null);
+
+  const output = classifyProjects(
+    [{ id: "a", code: "24-001", name: "Smith Residence", type: null, sourceValue, status: "open" }],
+    [{ projectId: "a", projectCode: null, activityId: null, activityCode: "FIELD", hours: 1 }],
+    new Map([["Short Plat / SP", { fingerprintKey: "Short Plat", active: true }]]),
   );
   assert.deepEqual(output[0].failedRules, ["I-2"]);
 });

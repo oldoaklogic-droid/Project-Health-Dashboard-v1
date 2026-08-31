@@ -38,6 +38,15 @@ export const FINGERPRINT_SEEDS = [
   "Plat (general)",
   "Site Plan",
 ] as const;
+export const PHASE2_NAME_HINT_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
+  ["Short Plat / SP", /\b(short plat|sp)\b/i],
+  ["Subdivision", /\bsubdivision\b/i],
+  ["Site Plan", /\bsite plan\b/i],
+  ["Topo", /\btopo(graphic)?\b/i],
+  ["Boundary", /\bboundary\b/i],
+  ["ALTA", /\balta\b/i],
+  ["Plat", /\bplat\b/i],
+];
 type Bucket = NonProjectBucket;
 
 export type MappingSourceKind = "class" | "custom_field" | "name_pattern";
@@ -127,6 +136,11 @@ export function customFieldDisplayValue(field: { description?: string | null; va
   return field.description?.trim() || field.value?.trim() || "(blank)";
 }
 
+export function phase2NamePatternValue(code: string | null, name: string | null): string | null {
+  const text = `${code ?? ""} ${name ?? ""}`;
+  return PHASE2_NAME_HINT_PATTERNS.find(([, pattern]) => pattern.test(text))?.[0] ?? null;
+}
+
 /** Builds immutable, source-neutral evidence over the classified project universe. */
 export function buildPhase2Diagnostics(
   projects: ClassifierProject[],
@@ -164,12 +178,10 @@ export function buildPhase2Diagnostics(
   for (const group of customGroups.values()) {
     output.push({ diagnosticKind: "custom_field", fieldKey: group.fieldKey, fieldLabel: group.label, value: group.value, projectCount: group.members.size, hours: round([...group.members].reduce((total, projectId) => total + (dispositionByProjectId.get(projectId)?.hours ?? 0), 0)) });
   }
-  const hints: Array<[string, RegExp]> = [["Short Plat / SP", /\b(short plat|sp)\b/i], ["Subdivision", /\bsubdivision\b/i], ["Site Plan", /\bsite plan\b/i], ["Topo", /\btopo(graphic)?\b/i], ["Boundary", /\bboundary\b/i], ["ALTA", /\balta\b/i], ["Plat", /\bplat\b/i]];
-  for (const [label, pattern] of hints) {
-    const members = diagnosticProjects.filter((project) => {
-      const text = `${project.code ?? ""} ${project.name ?? ""}`;
-      return hints.find(([, candidate]) => candidate.test(text))?.[0] === label;
-    });
+  for (const [label] of PHASE2_NAME_HINT_PATTERNS) {
+    const members = diagnosticProjects.filter((project) =>
+      phase2NamePatternValue(project.code, project.name) === label,
+    );
     output.push({ diagnosticKind: "text_hint", fieldKey: null, fieldLabel: label, value: label, projectCount: members.length, hours: round(members.reduce((total, project) => total + hoursFor(project), 0)) });
   }
   return output;
@@ -236,8 +248,9 @@ export async function createPhase2Reconciliation(createdBy: string) {
     const existing = latestProjects.get(key);
     if (!existing || project.pulledAt > existing.pulledAt) latestProjects.set(key, project);
   }
-  const sourceValueFor = (project: { recordId: string; projectClass: string | null }) => {
+  const sourceValueFor = (project: { recordId: string; code: string | null; name: string | null; projectClass: string | null }) => {
     if (sourceKind === "class") return project.projectClass;
+    if (sourceKind === "name_pattern") return phase2NamePatternValue(project.code, project.name);
     if (sourceKind !== "custom_field" || !sourceFieldKey) return null;
     const values = new Set(customFields
       .filter((field) => field.projectId === project.recordId &&

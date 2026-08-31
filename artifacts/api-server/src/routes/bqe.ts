@@ -147,6 +147,63 @@ router.post("/admin/phase2/reconciliation", requireDashboardAdmin, async (req, r
   }
 });
 
+router.post("/admin/phase2/seed-and-run", requireDashboardAdmin, async (req, res): Promise<void> => {
+  try {
+    await ensureFingerprintSeeds();
+    const mappings = [
+      ["Short Plat / SP", "Short Plat"],
+      ["Subdivision", "Subdivision"],
+      ["Site Plan", "Site Plan"],
+      ["Topo", "Topographic Survey"],
+      ["Boundary", "Boundary Survey"],
+      ["ALTA", "ALTA Survey"],
+      ["Plat", "Plat (general)"],
+    ] as const;
+    const now = new Date();
+    await db.transaction(async (tx) => {
+      await tx.insert(bqePhase2MappingSourceTable).values({
+        id: 1,
+        sourceKind: "name_pattern",
+        sourceFieldKey: null,
+        updatedBy: res.locals.userId,
+        updatedAt: now,
+      }).onConflictDoUpdate({
+        target: bqePhase2MappingSourceTable.id,
+        set: {
+          sourceKind: "name_pattern",
+          sourceFieldKey: null,
+          updatedBy: res.locals.userId,
+          updatedAt: now,
+        },
+      });
+      for (const [sourceValue, fingerprintKey] of mappings) {
+        await tx.insert(bqeProjectSourceMappingsTable).values({
+          sourceKind: "name_pattern",
+          sourceFieldKey: "name_pattern",
+          sourceValue,
+          fingerprintKey,
+          active: true,
+          updatedBy: res.locals.userId,
+          updatedAt: now,
+        }).onConflictDoUpdate({
+          target: [
+            bqeProjectSourceMappingsTable.sourceKind,
+            bqeProjectSourceMappingsTable.sourceFieldKey,
+            bqeProjectSourceMappingsTable.sourceValue,
+          ],
+          set: { fingerprintKey, active: true, updatedBy: res.locals.userId, updatedAt: now },
+        });
+      }
+    });
+    const created = await createPhase2Reconciliation(res.locals.userId);
+    const summary = created ? await getPhase2Run(created.id) : null;
+    res.status(201).json(summary);
+  } catch (error: unknown) {
+    req.log.error({ err: error }, "Phase 2 name-pattern seed and reconciliation failed");
+    res.status(422).json({ error: error instanceof Error ? error.message : "Phase 2 name-pattern seed and reconciliation failed." });
+  }
+});
+
 router.get("/admin/phase2/mappings", requireDashboardAdmin, async (_req, res): Promise<void> => {
   await ensureFingerprintSeeds();
   const [fingerprints, sourceRows, latestRuns] = await Promise.all([
