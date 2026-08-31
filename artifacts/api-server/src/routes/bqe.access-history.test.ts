@@ -150,6 +150,9 @@ mock.module("../lib/bqe", {
     getBqeAccessToken: async () => {
       throw new Error("The BQE client is not used by this test.");
     },
+    getBqeSandboxAccessToken: async () => {
+      throw new Error("The BQE sandbox client is not used by this test.");
+    },
   },
 });
 
