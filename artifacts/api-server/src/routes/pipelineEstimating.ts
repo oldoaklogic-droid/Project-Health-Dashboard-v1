@@ -310,13 +310,20 @@ router.post("/local-projects/:id/closeout", requireDashboardEditor, async (req, 
   const activities = Array.isArray(project.activities) ? project.activities : [];
   if (phases.some((phase) => object(phase)?.status !== "Complete")) return void fail(res, 409, "All phases must be complete before closeout.");
   const logs = [];
+  let totalActualHours = 0;
   for (const activity of activities) {
     const item = object(activity); const code = item && text(item.code, true); const estimated = item && number(item.estimatedHours);
     const actual = code ? number(actualHours[code]) : undefined;
     if (!code || estimated === undefined || estimated === null || actual === undefined || actual < 0) return void fail(res, 400, "A nonnegative actual hour value is required for every activity.");
-    if (estimated > 0 && Math.abs(actual - estimated) / estimated > .2 && (!text(body.varianceReason, true) || !text(body.varianceNote, true))) return void fail(res, 400, "Variance reason and note are required for activity variances over 20%.");
+    totalActualHours += actual;
     logs.push({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), activityCode: code, activityDescription: text(item.desc) ?? text(item.description) ?? "", estimatedHours: estimated, actualHours: actual, varianceHours: actual - estimated });
   }
+  const approvedHours = asNumber(project.approvedHours);
+  if (
+    approvedHours > 0 &&
+    Math.abs(totalActualHours - approvedHours) / approvedHours > .2 &&
+    (!text(body.varianceReason, true) || !text(body.varianceNote, true))
+  ) return void fail(res, 400, "Variance reason and note are required when total actual hours vary from approved hours by more than 20%.");
   const [closed] = await db.update(localProjectsTable).set({ status: "Closed", closeout: { actualHours, varianceReason: text(body.varianceReason), varianceNote: text(body.varianceNote), closedAt: new Date().toISOString() }, adjustmentLogs: logs }).where(eq(localProjectsTable.id, project.id)).returning();
   res.json(closed);
 });
