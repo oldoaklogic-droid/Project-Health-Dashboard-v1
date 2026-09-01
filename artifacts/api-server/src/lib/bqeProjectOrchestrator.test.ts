@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { calculateEstimate } from "./estimating";
 import {
+  BQE_ENTITY_LOOKUPS,
   orchestrateBqeProjectCreation,
   type BqeProjectOrchestrationDependencies,
   type BqeProjectOrchestrationInput,
@@ -85,6 +86,15 @@ const fakeConnection = async () => ({
 
 const fakeResolve: NonNullable<BqeProjectOrchestrationDependencies["resolveUuid"]> =
   async (_connection, entityType) => ids[entityType];
+
+test("uses the live BQE collection and filter field names", () => {
+  assert.deepEqual(BQE_ENTITY_LOOKUPS, {
+    client: { path: "client", field: "name" },
+    employee: { path: "employee", field: "displayName" },
+    activity: { path: "activity", field: "code" },
+    employeeGroup: { path: "group", field: "name" },
+  });
+});
 
 test("dry run builds exact payloads and performs zero BQE requests", async () => {
   let requestCount = 0;

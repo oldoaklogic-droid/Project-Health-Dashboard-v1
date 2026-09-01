@@ -8,6 +8,16 @@ type Json = Record<string, unknown>;
 type EntityType = "client" | "employee" | "activity" | "employeeGroup";
 type CreatedObject = { kind: string; id: string; targetProjectId?: string };
 
+export const BQE_ENTITY_LOOKUPS: Record<
+  EntityType,
+  { path: string; field: string }
+> = {
+  client: { path: "client", field: "name" },
+  employee: { path: "employee", field: "displayName" },
+  activity: { path: "activity", field: "code" },
+  employeeGroup: { path: "group", field: "name" },
+};
+
 export type BqeProjectOrchestrationInput = {
   intake: Intake;
   localProject: LocalProject;
@@ -124,13 +134,7 @@ async function resolveUuid(
   )).limit(1);
   if (cached) return cached.bqeUuid;
 
-  const config: Record<EntityType, { path: string; field: string }> = {
-    client: { path: "client", field: "name" },
-    employee: { path: "employee", field: "name" },
-    activity: { path: "activity", field: "code" },
-    employeeGroup: { path: "employeegroup", field: "name" },
-  };
-  const item = config[entityType];
+  const item = BQE_ENTITY_LOOKUPS[entityType];
   const url = new URL(endpoint(connection.apiBase, item.path));
   url.searchParams.set("where", `${item.field}='${escapedWhere(humanKey)}'`);
   const response = await fetch(url, {
