@@ -61,10 +61,29 @@ test("budget thresholds honor percent complete and missing budgets are unknown",
   assert.equal(evaluateHealth({ ...base, budgetBurn: 0.8, percentComplete: 79 }, rules).severity, "yellow");
   assert.equal(evaluateHealth({ ...base, budgetBurn: 0.95, percentComplete: 79 }, rules).severity, "yellow");
   assert.equal(evaluateHealth({ ...base, budgetBurn: 0.951, percentComplete: 79 }, rules).severity, "red");
-  assert.equal(evaluateHealth({ ...base, budgetBurn: 1.1, percentComplete: 80 }, rules).severity, "green");
+  assert.equal(evaluateHealth({ ...base, budgetBurn: 1.1, percentComplete: 80 }, rules).severity, "red");
   const missing = evaluateHealth({ ...base, budgetHours: null, budgetBurn: null }, rules);
   assert.equal(missing.severity, "green");
   assert.equal(missing.results.filter((result) => result.result === "unknown").length, 4);
+});
+
+test("missing percent complete gates progress-dependent rules but not absolute budget overrun", () => {
+  const missingProgress = evaluateHealth({
+    ...base,
+    percentComplete: null,
+    budgetBurn: 0.96,
+    activities: [{ code: "S-1", name: "Survey", planned: 10, actual: 13, variance: 3, variancePercent: 0.3 }],
+    feeRemaining: 1_000,
+  }, rules);
+  assert.equal(missingProgress.severity, "green");
+  assert.deepEqual(
+    missingProgress.results.filter((result) => result.result === "unknown").map((result) => result.name).sort(),
+    ["Activity red", "Activity yellow", "Budget red", "Budget yellow", "Fee yellow"].sort(),
+  );
+
+  const absoluteOverrun = evaluateHealth({ ...base, percentComplete: null, budgetBurn: 1.01 }, rules);
+  assert.equal(absoluteOverrun.severity, "red");
+  assert.equal(absoluteOverrun.results.find((result) => result.name === "Budget red")?.result, "triggered");
 });
 
 test("activity, WIP, invoice, note, contact, and fee thresholds preserve severity precedence", () => {

@@ -601,6 +601,9 @@ function ManagerView({ projectsData, openCard, access }) {
               <Metric label="AR total / over 60" value={`${metricValue(scoreboard.arTotal || 0, money)} / ${metricValue(scoreboard.arOver60 || 0, money)}`} />
               <Metric label="Red / Yellow / Gray" value={`${scoreboard.redCount || 0} / ${scoreboard.yellowCount || 0} / ${scoreboard.grayCount || 0}`} accent />
             </div>
+            {scoreboard.arDataAsOf && (
+              <p className="muted mb-3">AR data as of {new Date(scoreboard.arDataAsOf).toLocaleString()}</p>
+            )}
 
             <Blueprint className="mb-4 pt-0 pb-0" style={{padding:0}}>
               <div className="section-heading" style={{padding: "20px 20px 0"}}>

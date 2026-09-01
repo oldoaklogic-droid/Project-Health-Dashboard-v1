@@ -32,7 +32,7 @@ export type HealthMetrics = {
   actualHours: number;
   budgetHours: number | null;
   budgetBurn: number | null;
-  percentComplete: number;
+  percentComplete: number | null;
   invoicedAmount: number;
   feeRemaining: number;
   arTotal: number;
@@ -75,7 +75,7 @@ export function isValidHealthCondition(value: unknown): value is Record<string, 
   if (!RULE_TYPES.has(type)) return false;
   const numeric = (key: string) =>
     condition[key] === undefined || (typeof condition[key] === "number" && Number.isFinite(condition[key]));
-  if (!["minExclusive", "minInclusive", "maxExclusive", "maxInclusive", "percentCompleteMaxExclusive"]
+  if (!["minExclusive", "minInclusive", "maxExclusive", "maxInclusive", "percentCompleteMaxExclusive", "independentMinExclusive"]
     .every(numeric)) return false;
   if (condition.requiresBudget !== undefined && typeof condition.requiresBudget !== "boolean") return false;
   if (condition.activeOnly !== undefined && typeof condition.activeOnly !== "boolean") return false;
@@ -106,7 +106,7 @@ export type PortfolioProject = {
   override: null | { severity: HealthSeverity; reason: string; by: string };
   riskLine: string;
   actionLine: string;
-  percentComplete: number;
+  percentComplete: number | null;
   daysSinceLastPmNote: number | null;
   metrics: HealthMetrics;
 };
@@ -116,7 +116,23 @@ type EvaluationInput = Omit<HealthMetrics, "activities"> & {
   active?: boolean;
 };
 
+export type PortfolioArSnapshot = {
+  total: number;
+  over60: number;
+  dataAsOf: string;
+  activeExternalRootCount: number;
+};
+
 const OBSOLETE_SEED_CODES = new Set(["26-1509", "26-1510", "26-1511"]);
+const RULE_TYPES_WITHOUT_PROGRESS = new Set([
+  "unbilled_age",
+  "invoice_past_due",
+  "pm_note_age",
+  "client_contact_age",
+  "fee_exhausted",
+  "time_entry_age",
+  "dual_inactivity",
+]);
 const MS_PER_DAY = 86_400_000;
 const WIP_RATE = 220;
 
@@ -155,6 +171,20 @@ export function evaluateHealth(
     if (condition.activeOnly === true && metrics.active === false) {
       return { id: rule.id, name: rule.name, severity: rule.severity as RuleSeverity, result: "clear" };
     }
+    if (type === "budget_burn") {
+      const independentMin = typeof condition.independentMinExclusive === "number"
+        ? condition.independentMinExclusive
+        : rule.severity === "red" ? 1 : null;
+      if (independentMin !== null && metrics.budgetBurn !== null && metrics.budgetBurn > independentMin) {
+        return { id: rule.id, name: rule.name, severity: rule.severity as RuleSeverity, result: "triggered" };
+      }
+      if (metrics.percentComplete === null) {
+        return { id: rule.id, name: rule.name, severity: rule.severity as RuleSeverity, result: "unknown" };
+      }
+    }
+    if (metrics.percentComplete === null && !RULE_TYPES_WITHOUT_PROGRESS.has(type)) {
+      return { id: rule.id, name: rule.name, severity: rule.severity as RuleSeverity, result: "unknown" };
+    }
     const missingHistory =
       (type === "pm_note_age" && metrics.daysSinceLastPmNote === null) ||
       (type === "client_contact_age" && metrics.daysSinceLastContact === null) ||
@@ -168,7 +198,8 @@ export function evaluateHealth(
     let triggered = false;
     switch (type) {
       case "budget_burn":
-        triggered = metrics.percentComplete < numberValue(condition.percentCompleteMaxExclusive) &&
+        triggered = metrics.percentComplete !== null &&
+          metrics.percentComplete < numberValue(condition.percentCompleteMaxExclusive) &&
           inRange(metrics.budgetBurn, condition);
         break;
       case "activity_variance":
@@ -190,7 +221,7 @@ export function evaluateHealth(
       case "fee_exhausted":
         triggered = metrics.contractAmount > 0 &&
           metrics.invoicedAmount >= metrics.contractAmount &&
-          metrics.percentComplete < 100;
+          (metrics.percentComplete === null || metrics.percentComplete < 100);
         break;
       case "time_entry_age":
         triggered = metrics.daysSinceLastTime !== null && inRange(metrics.daysSinceLastTime, condition);
@@ -251,6 +282,7 @@ function invoiceDueDate(invoice: typeof bqeInvoicesTable.$inferSelect): string |
 
 type LoadedData = {
   asOf: string;
+  portfolioAr: PortfolioArSnapshot;
   projects: PortfolioProject[];
   phaseByProject: Map<string, Array<{
     id: string;
@@ -272,6 +304,50 @@ type LoadedData = {
 
 let portfolioCache: { expires: number; promise: Promise<LoadedData> } | null = null;
 
+function isExternalProject(client: string | null | undefined): boolean {
+  const normalized = client?.trim().toLowerCase() ?? "";
+  return normalized !== "" && normalized !== "complete design, inc.";
+}
+
+function calculatePortfolioAr(
+  asOf: string,
+  completedAt: Date | null,
+  projects: typeof bqeProjectsTable.$inferSelect[],
+  invoices: typeof bqeInvoicesTable.$inferSelect[],
+): PortfolioArSnapshot {
+  const projectById = new Map(projects.map((project) => [project.recordId, project]));
+  const projectByCode = new Map(projects.flatMap((project) =>
+    project.code ? [[project.code, project] as const] : []));
+  const eligibleRootIds = new Set(projects.filter((project) =>
+    !project.parentId &&
+    !project.rootProjectId &&
+    isBqeProjectActive(project.status) &&
+    isExternalProject(project.client)
+  ).map((project) => project.recordId));
+
+  let total = 0;
+  let over60 = 0;
+  for (const invoice of invoices) {
+    if (invoice.void || invoice.draft || invoice.invoiceType === 39 || numberValue(invoice.balance) <= 0) continue;
+    if (invoice.invoiceDate && invoice.invoiceDate > asOf) continue;
+    const project = (invoice.projectId ? projectById.get(invoice.projectId) : undefined) ??
+      (invoice.projectCode ? projectByCode.get(invoice.projectCode) : undefined);
+    if (!project) continue;
+    const rootId = project.rootProjectId || project.parentId || project.recordId;
+    if (!eligibleRootIds.has(rootId)) continue;
+    const balance = numberValue(invoice.balance);
+    total += balance;
+    if ((daysBetween(asOf, invoiceDueDate(invoice)) ?? 0) > 60) over60 += balance;
+  }
+
+  return {
+    total: Math.round(total * 100) / 100,
+    over60: Math.round(over60 * 100) / 100,
+    dataAsOf: completedAt?.toISOString() ?? `${asOf}T00:00:00.000Z`,
+    activeExternalRootCount: eligibleRootIds.size,
+  };
+}
+
 async function loadPortfolioData(force = false): Promise<LoadedData> {
   if (!force && portfolioCache && portfolioCache.expires > Date.now()) return portfolioCache.promise;
   const promise = (async (): Promise<LoadedData> => {
@@ -285,11 +361,20 @@ async function loadPortfolioData(force = false): Promise<LoadedData> {
         db.select().from(pmNotesTable).orderBy(desc(pmNotesTable.asOf)),
         db.select().from(clientContactLogTable).orderBy(desc(clientContactLogTable.contactDate)),
         db.select().from(healthRulesTable).orderBy(healthRulesTable.sortOrder),
-        db.select({ asOfDate: bqeReconciliationTable.asOfDate }).from(bqeReconciliationTable)
+        db.select({
+          asOfDate: bqeReconciliationTable.asOfDate,
+          completedAt: bqeReconciliationTable.completedAt,
+        }).from(bqeReconciliationTable)
           .orderBy(desc(bqeReconciliationTable.completedAt)).limit(1),
         db.select().from(projectHealthSnapshotTable),
       ]);
     const asOf = reconciliations[0]?.asOfDate ?? new Date().toISOString().slice(0, 10);
+    const portfolioAr = calculatePortfolioAr(
+      asOf,
+      reconciliations[0]?.completedAt ?? null,
+      bqeProjects,
+      invoices,
+    );
     const bqeByCode = new Map(bqeProjects.filter((row) => row.code).map((row) => [row.code!, row]));
     const childrenByRoot = new Map<string, typeof bqeProjects>();
     for (const project of bqeProjects) {
@@ -298,6 +383,12 @@ async function loadPortfolioData(force = false): Promise<LoadedData> {
     }
     const latestNote = new Map<string, typeof notes[number]>();
     for (const note of notes) if (!latestNote.has(note.projectId)) latestNote.set(note.projectId, note);
+    const latestPercentComplete = new Map<string, number>();
+    for (const note of notes) {
+      if (!latestPercentComplete.has(note.projectId) && note.percentComplete !== null) {
+        latestPercentComplete.set(note.projectId, numberValue(note.percentComplete));
+      }
+    }
     const latestContact = new Map<string, typeof contacts[number]>();
     for (const contact of contacts) if (!latestContact.has(contact.projectId)) latestContact.set(contact.projectId, contact);
     const snapshotByProject = new Map(snapshots.filter((row) => row.asOf === asOf).map((row) => [row.projectId, row]));
@@ -368,7 +459,8 @@ async function loadPortfolioData(force = false): Promise<LoadedData> {
       }, null);
       const arOver60 = openInvoices.reduce((sum, invoice) =>
         (daysBetween(asOf, invoiceDueDate(invoice)) ?? 0) > 60 ? sum + numberValue(invoice.balance) : sum, 0);
-      const percentComplete = numberValue(note?.percentComplete ?? overlay.pctComplete);
+      const percentComplete = latestPercentComplete.get(id) ??
+        (overlay.pctAvail ? numberValue(overlay.pctComplete) : null);
       const reconciledAr = openInvoices.reduce((sum, row) => sum + numberValue(row.balance), 0);
       const arTotal = numberValue(overlay.openAr) > 0 ? numberValue(overlay.openAr) : reconciledAr;
       const metrics: HealthMetrics = {
@@ -463,7 +555,7 @@ async function loadPortfolioData(force = false): Promise<LoadedData> {
       });
       detailByProject.set(overlay.code, detailByProject.get(id)!);
     }
-    return { asOf, projects: output, phaseByProject, detailByProject };
+    return { asOf, portfolioAr, projects: output, phaseByProject, detailByProject };
   })();
   portfolioCache = { expires: Date.now() + 60_000, promise };
   return promise;

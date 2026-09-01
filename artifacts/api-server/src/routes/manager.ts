@@ -63,7 +63,8 @@ router.get("/manager/portfolio", async (req, res): Promise<void> => {
     res.status(400).json({ error: "view must be portfolio or mine; pm is optional." });
     return;
   }
-  const all = (await computePortfolio()).projects;
+  const portfolio = await computePortfolio();
+  const all = portfolio.projects;
   const selected = view === "mine" && pm ? all.filter((project) => project.pm === pm) : all;
   const rows = selected.map(projectSummary);
   const bySeverity = (severity: HealthSeverity) =>
@@ -76,8 +77,10 @@ router.get("/manager/portfolio", async (req, res): Promise<void> => {
       activeCount: rows.length,
       feeUnderManagement: rows.reduce((sum, row) => sum + row.fee, 0),
       unbilledWipEstimate: rows.reduce((sum, row) => sum + row.metrics.wipEstimate, 0),
-      arTotal: selected.reduce((sum, row) => sum + row.portfolioAr, 0),
-      arOver60: rows.reduce((sum, row) => sum + row.metrics.arOver60, 0),
+      arTotal: portfolio.portfolioAr.total,
+      arOver60: portfolio.portfolioAr.over60,
+      arDataAsOf: portfolio.portfolioAr.dataAsOf,
+      arActiveExternalRootCount: portfolio.portfolioAr.activeExternalRootCount,
       redCount: bySeverity("red").length,
       yellowCount: bySeverity("yellow").length,
       grayCount: bySeverity("gray").length,
