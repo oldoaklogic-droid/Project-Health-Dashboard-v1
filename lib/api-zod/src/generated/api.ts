@@ -683,6 +683,22 @@ export const CreateBqeProjectResponse = zod.unknown()
 
 
 /**
+ * @summary List local projects
+ */
+export const ListLocalProjectsResponseItem = zod.object({
+  "id": zod.string(),
+  "intakeId": zod.string(),
+  "projectNumber": zod.string(),
+  "name": zod.string(),
+  "client": zod.string(),
+  "pm": zod.string(),
+  "disciplines": zod.array(zod.string()),
+  "status": zod.string()
+})
+export const ListLocalProjectsResponse = zod.array(ListLocalProjectsResponseItem)
+
+
+/**
  * @summary Get a local project
  */
 export const GetLocalProjectParams = zod.object({
@@ -723,6 +739,30 @@ export const UpdateLocalProjectResponse = zod.object({
 
 
 /**
+ * @summary Update an open local project phase
+ */
+export const UpdateLocalProjectPhaseParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const UpdateLocalProjectPhaseBody = zod.object({
+  "name": zod.string(),
+  "status": zod.enum(['Not Started', 'In Progress', 'Complete'])
+})
+
+export const UpdateLocalProjectPhaseResponse = zod.object({
+  "id": zod.string(),
+  "intakeId": zod.string(),
+  "projectNumber": zod.string(),
+  "name": zod.string(),
+  "client": zod.string(),
+  "pm": zod.string(),
+  "disciplines": zod.array(zod.string()),
+  "status": zod.string()
+})
+
+
+/**
  * @summary Add a local change order
  */
 export const CreateChangeOrderParams = zod.object({
@@ -741,6 +781,30 @@ export const CreateChangeOrderBody = zod.object({
 })
 
 export const CreateChangeOrderResponse = zod.object({
+  "id": zod.string(),
+  "intakeId": zod.string(),
+  "projectNumber": zod.string(),
+  "name": zod.string(),
+  "client": zod.string(),
+  "pm": zod.string(),
+  "disciplines": zod.array(zod.string()),
+  "status": zod.string()
+})
+
+
+/**
+ * @summary Authorize or revoke a local change order
+ */
+export const AuthorizeChangeOrderParams = zod.object({
+  "id": zod.coerce.string(),
+  "changeOrderId": zod.coerce.string()
+})
+
+export const AuthorizeChangeOrderBody = zod.object({
+  "authorized": zod.boolean()
+})
+
+export const AuthorizeChangeOrderResponse = zod.object({
   "id": zod.string(),
   "intakeId": zod.string(),
   "projectNumber": zod.string(),

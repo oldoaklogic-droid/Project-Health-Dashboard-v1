@@ -90,7 +90,7 @@ export const localProjectsTable = pgTable(
   },
   (table) => [
     uniqueIndex("local_projects_project_number_uidx").on(table.projectNumber),
-    index("local_projects_intake_id_idx").on(table.intakeId),
+    uniqueIndex("local_projects_intake_id_uidx").on(table.intakeId),
   ],
 );
 

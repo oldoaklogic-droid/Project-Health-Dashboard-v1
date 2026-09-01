@@ -362,12 +362,30 @@ export type CreateBqeProjectBody = {
 
 export type UpdateLocalProjectBody = { [key: string]: unknown };
 
+export type UpdateLocalProjectPhaseBodyStatus = typeof UpdateLocalProjectPhaseBodyStatus[keyof typeof UpdateLocalProjectPhaseBodyStatus];
+
+
+export const UpdateLocalProjectPhaseBodyStatus = {
+  Not_Started: 'Not Started',
+  In_Progress: 'In Progress',
+  Complete: 'Complete',
+} as const;
+
+export type UpdateLocalProjectPhaseBody = {
+  name: string;
+  status: UpdateLocalProjectPhaseBodyStatus;
+};
+
 export type CreateChangeOrderBody = {
   description: string;
   reason: string;
   /** @minimum 0 */
   requestedHours: number;
   authorized?: boolean;
+};
+
+export type AuthorizeChangeOrderBody = {
+  authorized: boolean;
 };
 
 export type CloseLocalProjectBodyActualHours = {[key: string]: number};

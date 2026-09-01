@@ -36,6 +36,7 @@ export type BqeProjectOrchestrationResult = {
   created: CreatedObject[];
   payloads: Array<{ kind: string; endpoint: string; payload: Json }>;
   projectIds: { parent: string | null; children: Record<string, string> };
+  warnings?: string[];
   error?: { message: string; failedKind: string };
 };
 
@@ -184,9 +185,29 @@ export async function orchestrateBqeProjectCreation(
   const connection = await getAccessToken();
   const payloads: BqeProjectOrchestrationResult["payloads"] = [];
   const created: CreatedObject[] = [];
+  const warnings: string[] = [];
+  const resolvedIds = new Map<string, string>();
   const projectIds = { parent: null as string | null, children: {} as Record<string, string> };
   let failedKind = "project";
   const register = (kind: string, path: string, payload: Json) => payloads.push({ kind, endpoint: path, payload });
+  const resolveForRun = async (entityType: EntityType, humanKey: string): Promise<string> => {
+    const cacheKey = `${entityType}:${humanKey}`;
+    const cached = resolvedIds.get(cacheKey);
+    if (cached) return cached;
+    try {
+      const id = await resolve(connection, entityType, humanKey);
+      resolvedIds.set(cacheKey, id);
+      return id;
+    } catch (error: unknown) {
+      if (!input.dryRun) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      const placeholder = `dry-run:unresolved:${entityType}:${humanKey}`;
+      warnings.push(message);
+      resolvedIds.set(cacheKey, placeholder);
+      logger.warn({ entityType, humanKey, placeholder, err: error }, "BQE dry-run using unresolved lookup placeholder");
+      return placeholder;
+    }
+  };
   const create = async (kind: string, path: string, payload: Json, targetProjectId?: string): Promise<string> => {
     register(kind, path, payload);
     if (input.dryRun) {
@@ -216,13 +237,26 @@ export async function orchestrateBqeProjectCreation(
   };
 
   try {
-    const clientId = await resolve(connection, "client", input.localProject.client || input.intake.client);
+    const clientId = await resolveForRun("client", input.localProject.client || input.intake.client);
     const groupName = input.employeeGroupName ?? text(asRecord(input.intake.answers).employeeGroup);
     if (!groupName) {
       throw new Error("A BQE employee group name is required (employeeGroupName or intake.answers.employeeGroup).");
     }
-    const resourceGroupId = await resolve(connection, "employeeGroup", groupName);
-    const parentManagerId = await resolve(connection, "employee", disciplineManager(input));
+    const resourceGroupId = await resolveForRun("employeeGroup", groupName);
+    const parentManagerId = await resolveForRun("employee", disciplineManager(input));
+    const disciplines = input.estimate.disciplines;
+    const managerIds = new Map<string, string>();
+    for (const discipline of disciplines) {
+      managerIds.set(
+        discipline.discipline,
+        await resolveForRun("employee", disciplineManager(input, discipline.discipline)),
+      );
+      for (const activity of discipline.activities) {
+        if (numeric(activity.calculatedHours) > 0) {
+          await resolveForRun("activity", activity.code);
+        }
+      }
+    }
     const baseProject = (name: string, code: string, managerId: string, contractAmount: number): Json => ({
       name, code, clientId, managerId, contractType: input.intake.contractType ?? "",
       type: 0, status: 0, contractAmount, startDate: input.intake.startDate,
@@ -232,11 +266,10 @@ export async function orchestrateBqeProjectCreation(
       input.localProject.name, input.localProject.projectNumber, parentManagerId, numeric(input.localProject.fee),
     ));
 
-    const disciplines = input.estimate.disciplines;
     const targets: Array<{ id: string; discipline: EstimateResult["disciplines"][number] | undefined; managerId: string }> = [];
     if (disciplines.length > 1) {
       for (const discipline of disciplines) {
-        const managerId = await resolve(connection, "employee", disciplineManager(input, discipline.discipline));
+        const managerId = managerIds.get(discipline.discipline) ?? parentManagerId;
         const childId = await create("childProject", "project", {
           ...baseProject(`${input.localProject.name} - ${discipline.discipline}`, `${input.localProject.projectNumber}-${discipline.disciplineKey ?? discipline.discipline}`, managerId, discipline.fee),
           parentId: projectIds.parent,
@@ -277,7 +310,7 @@ export async function orchestrateBqeProjectCreation(
       for (const activity of target.discipline.activities) {
         const hours = numeric(activity.calculatedHours);
         if (hours <= 0) continue;
-        const activityId = await resolve(connection, "activity", activity.code);
+        const activityId = await resolveForRun("activity", activity.code);
         const billRate = numeric((activity as unknown as Json).billRate, numeric(input.estimate.rate));
         services.push({
           itemId: activityId, resourceId: target.managerId,
@@ -298,7 +331,7 @@ export async function orchestrateBqeProjectCreation(
       for (const activity of target.discipline.activities) {
         const hours = numeric(activity.calculatedHours);
         if (hours <= 0) continue;
-        const activityId = await resolve(connection, "activity", activity.code);
+        const activityId = await resolveForRun("activity", activity.code);
         await create("activityAssignment", "projectassignment/activity", { projectId: target.id, itemId: activityId }, target.id);
         await create("allocation", "allocation", {
           itemId: activityId, itemType: 1, projectId: target.id, resourceId: target.managerId,
@@ -309,12 +342,14 @@ export async function orchestrateBqeProjectCreation(
     }
     const result: BqeProjectOrchestrationResult = {
       status: input.dryRun ? "dry-run" : "completed", created, payloads, projectIds,
+      ...(warnings.length ? { warnings } : {}),
     };
     logger.info({ status: result.status, projectIds, payloadCount: payloads.length }, "BQE project orchestration completed");
     return result;
   } catch (error: unknown) {
     const result: BqeProjectOrchestrationResult = {
       status: "partial", created, payloads, projectIds,
+      ...(warnings.length ? { warnings } : {}),
       error: { message: error instanceof Error ? error.message : String(error), failedKind },
     };
     logger.error({ err: error, created, failedKind }, "BQE project orchestration stopped after partial creation");

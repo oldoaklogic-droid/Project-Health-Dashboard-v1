@@ -11,6 +11,9 @@ import {
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import "./styles.css";
 
+import { PipelineView } from "./views/PipelineView";
+import { EstimatingView } from "./views/EstimatingView";
+
 // SVG Icons
 const HomeIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>;
 const BarChartIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>;
@@ -103,9 +106,9 @@ function SheetTitleBlock({ page, userName }) {
 
 function SheetPage({ page, userName, data, children }) {
   const meta = pageMeta[page] ?? pageMeta.home;
-  const status = page === "reports" || page === "admin" || page === "home"
+  const status = page === "reports" || page === "admin" || page === "home" || page === "estimating" || page === "pipeline"
     ? "ISSUED"
-    : `PHASE ${page === "projects" ? "2" : page === "estimating" ? "3" : page === "manager" ? "5" : "7"}`;
+    : `PHASE ${page === "projects" ? "2" : page === "manager" ? "5" : "7"}`;
   return (
     <div className={`sheet-page sheet-page-${page}`} data-testid={`sheet-page-${page}`}>
       {page !== "home" && (
@@ -138,8 +141,8 @@ function HomeView({ onNavigate, isAdmin, userName }) {
   const wings = [
     ["R-100", "Reports", "Financial reconciliation, project health, report pack", "issued", "reports"],
     ["P-100", "Projects", "Budget vs actual, project health, measurement", "phase2", "projects"],
-    ["E-100", "Estimating", "Project, multi-discipline, and principal's worksheet", "phase3", "estimating"],
-    ["L-100", "Pipeline", "Lead → intake → estimate → contract → project", "phase7", "pipeline"],
+    ["E-100", "Estimating", "Project, multi-discipline, and principal's worksheet", "issued", "estimating"],
+    ["L-100", "Pipeline", "Lead → intake → estimate → contract → project", "issued", "pipeline"],
     ["M-100", "Manager dashboard", "PM financials, team KPIs, Tuesday review", "phase5", "manager"],
   ];
   if (isAdmin) wings.push(["X-100", "Admin", "BQE connection, user roles, data pull status", "issued", "admin"]);
@@ -307,32 +310,6 @@ function ProjectsView({ projects, onOpen }) {
   );
 }
 
-function EstimatingView() {
-  const tools = [
-    ["Project Estimator", "Build a structured estimate for a single project and discipline."],
-    ["Multi-Discipline Estimator", "Coordinate scope, effort, and fees across CDI disciplines."],
-    ["Principal’s Worksheet", "Review assumptions, risk, and final pricing before authorization."],
-  ];
-  return (
-    <div className="content fade-in" data-testid="estimating-view">
-      <div className="page-header"><span className="overline">Estimating</span><h2>From opportunity to confident fee</h2><p className="muted">Purpose-built tools for consistent scope and pricing decisions.</p></div>
-      <div className="module-grid">
-        {tools.map(([title, description]) => <Blueprint className="module-card" key={title}><div className="placeholder-icon"><CalculatorIcon /></div><span className="phase2-badge">In development</span><h3>{title}</h3><p className="muted">{description}</p></Blueprint>)}
-      </div>
-    </div>
-  );
-}
-
-function PipelineView() {
-  const stages = ["Lead", "Intake", "Estimate", "Contract", "Project"];
-  return <div className="content fade-in" data-testid="pipeline-view">
-    <div className="page-header"><span className="overline">Pipeline</span><h2>A clear path from lead to project</h2><p className="muted">A shared operating view for business development and project activation.</p></div>
-    <Blueprint className="flow-panel">
-      <div className="pipeline-flow">{stages.map((stage, index) => <React.Fragment key={stage}><div className="flow-stage" data-testid={`pipeline-stage-${stage.toLowerCase()}`}><span>{String(index + 1).padStart(2, "0")}</span><strong>{stage}</strong></div>{index < stages.length - 1 && <i aria-hidden="true">→</i>}</React.Fragment>)}</div>
-      <div className="phase2-badge">In development — Phase 7</div>
-    </Blueprint>
-  </div>;
-}
 
 function ManagerView() {
   return <div className="content fade-in" data-testid="manager-view">
@@ -1141,8 +1118,8 @@ function DashboardApp() {
               {page === 'home' && <HomeView onNavigate={navigate} isAdmin={access?.isAdmin} userName={userName} />}
               {page === 'reports' && <ReportsView data={data} access={access} view={view} setView={setView} query={query} setQuery={setQuery} pmFilter={pmFilter} setPmFilter={setPmFilter} priority={priority} setPriority={setPriority} selectedCode={selectedCode} setSelectedCode={setSelectedCode} updateProject={updateProject} openCard={openCard} />}
               {page === 'projects' && <ProjectsView projects={data.projects} onOpen={openCard} />}
-              {page === 'estimating' && <EstimatingView />}
-              {page === 'pipeline' && <PipelineView />}
+              {page === 'estimating' && <EstimatingView onNavigate={navigate} />}
+              {page === 'pipeline' && <PipelineView onNavigate={navigate} />}
               {page === 'manager' && <ManagerView />}
               {page === 'admin' && access?.isAdmin && <AdminView dashboard={data} currentUserId={access.userId} onDashboardReload={loadDashboard} />}
             </SheetPage>

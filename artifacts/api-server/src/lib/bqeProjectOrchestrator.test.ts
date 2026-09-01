@@ -143,6 +143,45 @@ test("dry run builds exact payloads and performs zero BQE requests", async () =>
   assert.equal(result.payloads.some((item) => item.endpoint === "allocation"), true);
 });
 
+test("dry run records unresolved lookups and continues with explicit placeholders", async () => {
+  const result = await orchestrateBqeProjectCreation(fixtureInput(true), {
+    getAccessToken: fakeConnection,
+    resolveUuid: async (_connection, entityType, humanKey) => {
+      if (entityType === "activity") throw new Error(`missing activity ${humanKey}`);
+      return ids[entityType];
+    },
+    request: async () => {
+      throw new Error("dry run must not make a BQE object request");
+    },
+  });
+
+  assert.equal(result.status, "dry-run");
+  assert.ok(result.warnings?.some((warning) => warning.includes("missing activity")));
+  const budget = result.payloads.find((item) => item.kind === "budget");
+  const services = budget?.payload.services as Record<string, unknown>[];
+  assert.match(String(services[0].itemId), /^dry-run:unresolved:activity:/);
+});
+
+test("live mode resolves every required UUID before the first BQE POST", async () => {
+  let requestCount = 0;
+  const result = await orchestrateBqeProjectCreation(fixtureInput(false), {
+    getAccessToken: fakeConnection,
+    resolveUuid: async (_connection, entityType, humanKey) => {
+      if (entityType === "activity") throw new Error(`missing activity ${humanKey}`);
+      return ids[entityType];
+    },
+    request: async () => {
+      requestCount += 1;
+      return {};
+    },
+  });
+
+  assert.equal(result.status, "partial");
+  assert.equal(requestCount, 0);
+  assert.equal(result.created.length, 0);
+  assert.equal(result.payloads.length, 0);
+});
+
 test("live failure stops immediately and reports created objects", async () => {
   const calls: Array<{ path: string; method: string }> = [];
   const result = await orchestrateBqeProjectCreation(fixtureInput(false), {

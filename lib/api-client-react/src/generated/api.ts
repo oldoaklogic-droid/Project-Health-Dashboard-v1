@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AuthorizeChangeOrderBody,
   BqePullResult,
   BqeReconciliation,
   CloseLocalProjectBody,
@@ -43,7 +44,8 @@ import type {
   SearchCachedBqeClients200Item,
   SearchCachedBqeClientsParams,
   TestBqeConnection200Item,
-  UpdateLocalProjectBody
+  UpdateLocalProjectBody,
+  UpdateLocalProjectPhaseBody
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -1273,6 +1275,83 @@ export const useCreateBqeProject = <TError = ErrorType<void>,
       return useMutation(getCreateBqeProjectMutationOptions(options));
     }
 
+export const getListLocalProjectsUrl = () => {
+
+
+
+
+  return `/api/local-projects`
+}
+
+/**
+ * @summary List local projects
+ */
+export const listLocalProjects = async ( options?: Parameters<typeof customFetch>[1]): Promise<LocalProject[]> => {
+
+  return customFetch<LocalProject[]>(getListLocalProjectsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListLocalProjectsQueryKey = () => {
+    return [
+    `/api/local-projects`
+    ] as const;
+    }
+
+
+export const getListLocalProjectsQueryOptions = <TData = Awaited<ReturnType<typeof listLocalProjects>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLocalProjects>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListLocalProjectsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLocalProjects>>> = ({ signal }) => listLocalProjects({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLocalProjects>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListLocalProjectsQueryResult = NonNullable<Awaited<ReturnType<typeof listLocalProjects>>>
+export type ListLocalProjectsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List local projects
+ */
+
+export function useListLocalProjects<TData = Awaited<ReturnType<typeof listLocalProjects>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLocalProjects>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListLocalProjectsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getGetLocalProjectUrl = (id: string,) => {
 
 
@@ -1422,6 +1501,78 @@ export const useUpdateLocalProject = <TError = ErrorType<unknown>,
       return useMutation(getUpdateLocalProjectMutationOptions(options));
     }
 
+export const getUpdateLocalProjectPhaseUrl = (id: string,) => {
+
+
+
+
+  return `/api/local-projects/${id}/phases`
+}
+
+/**
+ * @summary Update an open local project phase
+ */
+export const updateLocalProjectPhase = async (id: string,
+    updateLocalProjectPhaseBody: UpdateLocalProjectPhaseBody, options?: Parameters<typeof customFetch>[1]): Promise<LocalProject> => {
+
+  return customFetch<LocalProject>(getUpdateLocalProjectPhaseUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateLocalProjectPhaseBody)
+  }
+);}
+
+
+
+
+
+export const getUpdateLocalProjectPhaseMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateLocalProjectPhase>>, TError,{id: string;data: BodyType<UpdateLocalProjectPhaseBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateLocalProjectPhase>>, TError,{id: string;data: BodyType<UpdateLocalProjectPhaseBody>}, TContext> => {
+
+const mutationKey = ['updateLocalProjectPhase'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateLocalProjectPhase>>, {id: string;data: BodyType<UpdateLocalProjectPhaseBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateLocalProjectPhase(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateLocalProjectPhaseMutationResult = NonNullable<Awaited<ReturnType<typeof updateLocalProjectPhase>>>
+    export type UpdateLocalProjectPhaseMutationBody = BodyType<UpdateLocalProjectPhaseBody>
+    export type UpdateLocalProjectPhaseMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update an open local project phase
+ */
+export const useUpdateLocalProjectPhase = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateLocalProjectPhase>>, TError,{id: string;data: BodyType<UpdateLocalProjectPhaseBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateLocalProjectPhase>>,
+        TError,
+        {id: string;data: BodyType<UpdateLocalProjectPhaseBody>},
+        TContext
+      > => {
+      return useMutation(getUpdateLocalProjectPhaseMutationOptions(options));
+    }
+
 export const getCreateChangeOrderUrl = (id: string,) => {
 
 
@@ -1492,6 +1643,80 @@ export const useCreateChangeOrder = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCreateChangeOrderMutationOptions(options));
+    }
+
+export const getAuthorizeChangeOrderUrl = (id: string,
+    changeOrderId: string,) => {
+
+
+
+
+  return `/api/local-projects/${id}/change-orders/${changeOrderId}`
+}
+
+/**
+ * @summary Authorize or revoke a local change order
+ */
+export const authorizeChangeOrder = async (id: string,
+    changeOrderId: string,
+    authorizeChangeOrderBody: AuthorizeChangeOrderBody, options?: Parameters<typeof customFetch>[1]): Promise<LocalProject> => {
+
+  return customFetch<LocalProject>(getAuthorizeChangeOrderUrl(id,changeOrderId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(authorizeChangeOrderBody)
+  }
+);}
+
+
+
+
+
+export const getAuthorizeChangeOrderMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authorizeChangeOrder>>, TError,{id: string;changeOrderId: string;data: BodyType<AuthorizeChangeOrderBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof authorizeChangeOrder>>, TError,{id: string;changeOrderId: string;data: BodyType<AuthorizeChangeOrderBody>}, TContext> => {
+
+const mutationKey = ['authorizeChangeOrder'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authorizeChangeOrder>>, {id: string;changeOrderId: string;data: BodyType<AuthorizeChangeOrderBody>}> = (props) => {
+          const {id,changeOrderId,data} = props ?? {};
+
+          return  authorizeChangeOrder(id,changeOrderId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthorizeChangeOrderMutationResult = NonNullable<Awaited<ReturnType<typeof authorizeChangeOrder>>>
+    export type AuthorizeChangeOrderMutationBody = BodyType<AuthorizeChangeOrderBody>
+    export type AuthorizeChangeOrderMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Authorize or revoke a local change order
+ */
+export const useAuthorizeChangeOrder = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authorizeChangeOrder>>, TError,{id: string;changeOrderId: string;data: BodyType<AuthorizeChangeOrderBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof authorizeChangeOrder>>,
+        TError,
+        {id: string;changeOrderId: string;data: BodyType<AuthorizeChangeOrderBody>},
+        TContext
+      > => {
+      return useMutation(getAuthorizeChangeOrderMutationOptions(options));
     }
 
 export const getCloseLocalProjectUrl = (id: string,) => {

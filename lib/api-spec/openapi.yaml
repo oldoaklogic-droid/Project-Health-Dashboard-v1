@@ -298,6 +298,19 @@ paths:
         "200": { description: Dry-run payload log }
         "201": { description: BQE project and local record created }
         "502": { description: BQE creation stopped with partial progress }
+  /local-projects:
+    get:
+      operationId: listLocalProjects
+      tags: [pipeline]
+      summary: List local projects
+      responses:
+        "200":
+          description: Local projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/LocalProject" }
   /local-projects/{id}:
     get:
       operationId: getLocalProject
@@ -330,6 +343,31 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/LocalProject" }
+  /local-projects/{id}/phases:
+    patch:
+      operationId: updateLocalProjectPhase
+      tags: [pipeline]
+      summary: Update an open local project phase
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, status]
+              properties:
+                name: { type: string }
+                status:
+                  type: string
+                  enum: [Not Started, In Progress, Complete]
+      responses:
+        "200":
+          description: Updated local project
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalProject" }
   /local-projects/{id}/change-orders:
     post:
       operationId: createChangeOrder
@@ -351,6 +389,32 @@ paths:
                 authorized: { type: boolean }
       responses:
         "201":
+          description: Updated local project
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalProject" }
+  /local-projects/{id}/change-orders/{changeOrderId}:
+    patch:
+      operationId: authorizeChangeOrder
+      tags: [pipeline]
+      summary: Authorize or revoke a local change order
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+        - name: changeOrderId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [authorized]
+              properties:
+                authorized: { type: boolean }
+      responses:
+        "200":
           description: Updated local project
           content:
             application/json:

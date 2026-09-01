@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { asc, desc, eq, ilike, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, isNull, sql } from "drizzle-orm";
 import {
   bqeProjectsTable,
   db,
@@ -46,12 +46,44 @@ const dueDateFor = (startDate: string | null, hours: number): string | null => {
 };
 
 function estimateFor(intake: typeof intakesTable.$inferSelect) {
-  return calculateEstimate({
+  const estimate = calculateEstimate({
     disciplines: intake.disciplines,
     drivers: intake.drivers,
     stepFlags: intake.stepFlags,
     rate: DEFAULT_RATE,
   });
+  if (!estimate) return null;
+  const overrides = object(intake.overrides) ?? {};
+  let totalHours = 0;
+  const disciplines = estimate.disciplines.map((discipline) => {
+    const activities = discipline.activities.map((activity) => {
+      const override = object(overrides[activity.code]);
+      const overrideHours = override ? number(override.hours) : undefined;
+      return overrideHours === undefined
+        ? activity
+        : { ...activity, calculatedHours: overrideHours };
+    });
+    const activityByCode = new Map(activities.map((activity) => [activity.code, activity]));
+    const phases = discipline.phases.map((phase) => ({
+      ...phase,
+      activities: phase.activities.map((activity) => activityByCode.get(activity.code) ?? activity),
+    }));
+    const disciplineHours = activities.reduce((sum, activity) => sum + (activity.calculatedHours ?? 0), 0);
+    totalHours += disciplineHours;
+    return {
+      ...discipline,
+      activities,
+      phases,
+      totalHours: disciplineHours,
+      fee: disciplineHours * estimate.rate,
+    };
+  });
+  return {
+    ...estimate,
+    disciplines,
+    totalHours,
+    totalFee: totalHours * estimate.rate,
+  };
 }
 
 function intakePatch(body: Record<string, unknown>) {
@@ -130,8 +162,15 @@ router.patch("/intakes/:id", requireDashboardEditor, async (req, res): Promise<v
   const body = object(req.body);
   const update = body && intakePatch(body);
   if (!update) return void fail(res, 400, "Invalid intake update.");
-  const [intake] = await db.update(intakesTable).set(update).where(eq(intakesTable.id, id)).returning();
-  if (!intake) return void fail(res, 404, "Intake not found.");
+  const [intake] = await db
+    .update(intakesTable)
+    .set(update)
+    .where(and(eq(intakesTable.id, id), isNull(intakesTable.estimateApprovedAt)))
+    .returning();
+  if (!intake) {
+    const [current] = await db.select({ id: intakesTable.id }).from(intakesTable).where(eq(intakesTable.id, id));
+    return void fail(res, current ? 409 : 404, current ? "Approved intakes are locked." : "Intake not found.");
+  }
   res.json(intake);
 });
 
@@ -148,11 +187,26 @@ router.get("/intakes/:id/estimate", async (req, res): Promise<void> => {
 router.post("/intakes/:id/approve-estimate", requireDashboardEditor, async (req, res): Promise<void> => {
   const id = paramId(req.params.id);
   if (!id) return void fail(res, 400, "A valid intake id is required.");
-  const [intake] = await db.select().from(intakesTable).where(eq(intakesTable.id, id));
-  if (!intake) return void fail(res, 404, "Intake not found.");
-  if (!estimateFor(intake)) return void fail(res, 400, "A valid estimate is required before approval.");
-  const [approved] = await db.update(intakesTable).set({ estimateApprovedAt: new Date() }).where(eq(intakesTable.id, intake.id)).returning();
-  res.json(approved);
+  const outcome = await db.transaction(async (tx) => {
+    const [intake] = await tx
+      .select()
+      .from(intakesTable)
+      .where(eq(intakesTable.id, id))
+      .for("update");
+    if (!intake) return { approved: null, status: 404, message: "Intake not found." };
+    if (intake.estimateApprovedAt) return { approved: null, status: 409, message: "The estimate is already approved." };
+    if (!estimateFor(intake)) return { approved: null, status: 400, message: "A valid estimate is required before approval." };
+    const [approved] = await tx
+      .update(intakesTable)
+      .set({ estimateApprovedAt: new Date() })
+      .where(and(eq(intakesTable.id, intake.id), isNull(intakesTable.estimateApprovedAt)))
+      .returning();
+    return approved
+      ? { approved, status: 200, message: "" }
+      : { approved: null, status: 409, message: "The estimate changed while approval was in progress." };
+  });
+  if (!outcome.approved) return void fail(res, outcome.status, outcome.message);
+  res.json(outcome.approved);
 });
 
 router.post("/intakes/:id/create-project", requireDashboardEditor, async (req, res): Promise<void> => {
@@ -174,6 +228,16 @@ router.post("/intakes/:id/create-project", requireDashboardEditor, async (req, r
   if (!pm) return void fail(res, 400, "At least one project manager is required.");
   if (!employeeGroupName) return void fail(res, 400, "A BQE employee group is required.");
   try {
+    if (!dryRun) {
+      const [existingProject] = await db
+        .select({ id: localProjectsTable.id })
+        .from(localProjectsTable)
+        .where(eq(localProjectsTable.intakeId, intake.id))
+        .limit(1);
+      if (existingProject) {
+        return void fail(res, 409, `A local project already exists for this intake (${existingProject.id}).`);
+      }
+    }
     const existing = await db.select({ projectNumber: localProjectsTable.projectNumber }).from(localProjectsTable);
     const projectNumber = String(existing.reduce((highest, row) => {
       const parsed = Number.parseInt(row.projectNumber, 10);
@@ -250,6 +314,10 @@ router.post("/intakes/:id/create-project", requireDashboardEditor, async (req, r
   }
 });
 
+router.get("/local-projects", async (_req, res): Promise<void> => {
+  res.json(await db.select().from(localProjectsTable).orderBy(desc(localProjectsTable.createdAt)));
+});
+
 router.get("/local-projects/:id", async (req, res): Promise<void> => {
   const id = paramId(req.params.id);
   if (!id) return void fail(res, 400, "A valid local project id is required.");
@@ -277,6 +345,32 @@ router.patch("/local-projects/:id", requireDashboardEditor, async (req, res): Pr
   res.json(project);
 });
 
+router.patch("/local-projects/:id/phases", requireDashboardEditor, async (req, res): Promise<void> => {
+  const id = paramId(req.params.id);
+  const body = object(req.body);
+  const phaseName = body && text(body.name, true);
+  const status = body && text(body.status, true);
+  if (!id || !phaseName || !status || !["Not Started", "In Progress", "Complete"].includes(status)) {
+    return void fail(res, 400, "A valid phase name and status are required.");
+  }
+  const [project] = await db.select().from(localProjectsTable).where(eq(localProjectsTable.id, id));
+  if (!project) return void fail(res, 404, "Local project not found.");
+  if (project.status === "Closed") return void fail(res, 409, "Closed projects are immutable.");
+  const phases = Array.isArray(project.phases) ? project.phases : [];
+  let found = false;
+  const next = phases.map((phase) => {
+    const value = object(phase);
+    if (value && text(value.name, true) === phaseName) {
+      found = true;
+      return { ...value, status };
+    }
+    return phase;
+  });
+  if (!found) return void fail(res, 404, "Project phase not found.");
+  const [updated] = await db.update(localProjectsTable).set({ phases: next }).where(eq(localProjectsTable.id, id)).returning();
+  res.json(updated);
+});
+
 router.post("/local-projects/:id/change-orders", requireDashboardEditor, async (req, res): Promise<void> => {
   const id = paramId(req.params.id);
   if (!id) return void fail(res, 400, "A valid local project id is required.");
@@ -296,6 +390,40 @@ router.post("/local-projects/:id/change-orders", requireDashboardEditor, async (
   }, 0);
   const [updated] = await db.update(localProjectsTable).set({ changeOrders: next, approvedHours: String(approvedHours), fee: String(approvedHours * asNumber(project.rate)) }).where(eq(localProjectsTable.id, project.id)).returning();
   res.status(201).json(updated);
+});
+
+router.patch("/local-projects/:id/change-orders/:changeOrderId", requireDashboardEditor, async (req, res): Promise<void> => {
+  const id = paramId(req.params.id);
+  const changeOrderId = paramId(req.params.changeOrderId);
+  const body = object(req.body);
+  if (!id || !changeOrderId || !body || typeof body.authorized !== "boolean") {
+    return void fail(res, 400, "An authorization decision is required.");
+  }
+  const [project] = await db.select().from(localProjectsTable).where(eq(localProjectsTable.id, id));
+  if (!project) return void fail(res, 404, "Local project not found.");
+  if (project.status === "Closed") return void fail(res, 409, "Closed projects are immutable.");
+  const orders = Array.isArray(project.changeOrders) ? project.changeOrders : [];
+  let found = false;
+  const next = orders.map((item) => {
+    const value = object(item);
+    if (value && text(value.id, true) === changeOrderId) {
+      found = true;
+      return { ...value, authorized: body.authorized };
+    }
+    return item;
+  });
+  if (!found) return void fail(res, 404, "Change order not found.");
+  const approvedHours = asNumber(project.originalHours) + next.reduce<number>((sum, item) => {
+    const value = object(item);
+    const hours = value ? number(value.requestedHours) : undefined;
+    return sum + (value?.authorized === true && hours !== undefined ? hours : 0);
+  }, 0);
+  const [updated] = await db.update(localProjectsTable).set({
+    changeOrders: next,
+    approvedHours: String(approvedHours),
+    fee: String(approvedHours * asNumber(project.rate)),
+  }).where(eq(localProjectsTable.id, id)).returning();
+  res.json(updated);
 });
 
 router.post("/local-projects/:id/closeout", requireDashboardEditor, async (req, res): Promise<void> => {
