@@ -5,6 +5,115 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export type LeadInputStatus = typeof LeadInputStatus[keyof typeof LeadInputStatus];
+
+
+export const LeadInputStatus = {
+  New: 'New',
+  Moved_to_Intake: 'Moved to Intake',
+  Dropped: 'Dropped',
+} as const;
+
+export interface LeadInput {
+  who: string;
+  what: string;
+  where: string;
+  source: string;
+  spotter: string;
+  status?: LeadInputStatus;
+}
+
+export type LeadUpdate = LeadInput;
+
+export type Lead = LeadInput & {
+  id: string;
+  createdAt: string;
+} & Required<Pick<LeadInput & {
+  id: string;
+  createdAt: string;
+}, 'status'>>;
+
+export type IntakeInputAnswers = { [key: string]: unknown };
+
+export type IntakeInputDrivers = {[key: string]: number};
+
+export type IntakeInputStepFlags = {[key: string]: boolean};
+
+export type IntakeInputPmByDiscipline = {[key: string]: string};
+
+export type IntakeInputOverrides = { [key: string]: unknown };
+
+export interface IntakeInput {
+  /** @nullable */
+  leadId?: string | null;
+  client: string;
+  /** @nullable */
+  contact?: string | null;
+  /** @nullable */
+  phone?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  address?: string | null;
+  /** @nullable */
+  parcel?: string | null;
+  /** @nullable */
+  referralSource?: string | null;
+  /** @nullable */
+  primaryRequest?: string | null;
+  /** @nullable */
+  propertyPlans?: string | null;
+  disciplines?: string[];
+  answers?: IntakeInputAnswers;
+  drivers?: IntakeInputDrivers;
+  stepFlags?: IntakeInputStepFlags;
+  /** @nullable */
+  contractType?: string | null;
+  /** @nullable */
+  paymentTerms?: string | null;
+  /** @nullable */
+  startDate?: string | null;
+  /** @nullable */
+  targetCompletion?: string | null;
+  pmByDiscipline?: IntakeInputPmByDiscipline;
+  overrides?: IntakeInputOverrides;
+}
+
+export type IntakeUpdate = IntakeInput;
+
+export type Intake = IntakeInput & ({
+  id: string;
+  /** @nullable */
+  estimateApprovedAt?: string | null;
+  createdAt: string;
+}) & Required<Pick<IntakeInput & ({
+  id: string;
+  /** @nullable */
+  estimateApprovedAt?: string | null;
+  createdAt: string;
+}), 'disciplines' | 'answers' | 'drivers' | 'stepFlags' | 'pmByDiscipline' | 'overrides'>>;
+
+export type EstimateDisciplinesItem = { [key: string]: unknown };
+
+export interface Estimate {
+  disciplines: EstimateDisciplinesItem[];
+  totalHours: number;
+  totalFee: number;
+  rate: number;
+}
+
+export interface LocalProject {
+  id: string;
+  intakeId: string;
+  projectNumber: string;
+  name: string;
+  client: string;
+  pm: string;
+  disciplines: string[];
+  status: string;
+  [key: string]: unknown;
+ }
+
 export interface HealthStatus {
   status: string;
 }
@@ -242,4 +351,43 @@ export interface Dashboard {
 }
 
 export type TestBqeConnection200Item = { [key: string]: unknown };
+
+export type CreateBqeProjectParams = {
+dryRun: boolean;
+};
+
+export type CreateBqeProjectBody = {
+  employeeGroupName?: string;
+};
+
+export type UpdateLocalProjectBody = { [key: string]: unknown };
+
+export type CreateChangeOrderBody = {
+  description: string;
+  reason: string;
+  /** @minimum 0 */
+  requestedHours: number;
+  authorized?: boolean;
+};
+
+export type CloseLocalProjectBodyActualHours = {[key: string]: number};
+
+export type CloseLocalProjectBody = {
+  actualHours: CloseLocalProjectBodyActualHours;
+  varianceReason?: string;
+  varianceNote?: string;
+};
+
+export type GetEstimatingFingerprints200 = { [key: string]: unknown };
+
+export type GetQuestionTree200Item = { [key: string]: unknown };
+
+export type SearchCachedBqeClientsParams = {
+/**
+ * @minLength 1
+ */
+q: string;
+};
+
+export type SearchCachedBqeClients200Item = { [key: string]: unknown };
 

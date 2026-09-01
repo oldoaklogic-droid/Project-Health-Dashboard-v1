@@ -14,6 +14,10 @@ tags:
     description: Project health dashboard data
   - name: bqe
     description: Read-only BQE CORE diagnostics
+  - name: pipeline
+    description: Lead, intake, and local project operations
+  - name: estimating
+    description: Historical estimating fingerprints and question tree
 paths:
   /healthz:
     get:
@@ -154,8 +158,382 @@ paths:
           description: Dashboard access approval required
         "404":
           description: No BQE pull has completed yet
+  /leads:
+    get:
+      operationId: listLeads
+      tags: [pipeline]
+      summary: List leads
+      responses:
+        "200":
+          description: Leads
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Lead" }
+    post:
+      operationId: createLead
+      tags: [pipeline]
+      summary: Create a lead
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeadInput" }
+      responses:
+        "201":
+          description: Created lead
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lead" }
+  /leads/{id}:
+    patch:
+      operationId: updateLead
+      tags: [pipeline]
+      summary: Update a lead
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeadUpdate" }
+      responses:
+        "200":
+          description: Updated lead
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lead" }
+  /intakes:
+    get:
+      operationId: listIntakes
+      tags: [pipeline]
+      summary: List intakes
+      responses:
+        "200":
+          description: Intakes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Intake" }
+    post:
+      operationId: createIntake
+      tags: [pipeline]
+      summary: Create an intake
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IntakeInput" }
+      responses:
+        "201":
+          description: Created intake
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Intake" }
+  /intakes/{id}:
+    patch:
+      operationId: updateIntake
+      tags: [pipeline]
+      summary: Update an intake
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IntakeUpdate" }
+      responses:
+        "200":
+          description: Updated intake
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Intake" }
+  /intakes/{id}/estimate:
+    get:
+      operationId: getIntakeEstimate
+      tags: [estimating]
+      summary: Recompute an intake estimate
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      responses:
+        "200":
+          description: Recomputed estimate
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Estimate" }
+  /intakes/{id}/approve-estimate:
+    post:
+      operationId: approveIntakeEstimate
+      tags: [estimating]
+      summary: Approve an intake estimate
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      responses:
+        "200":
+          description: Approved intake
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Intake" }
+  /intakes/{id}/create-project:
+    post:
+      operationId: createBqeProject
+      tags: [pipeline]
+      summary: Dry-run or execute BQE project creation
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+        - name: dryRun
+          in: query
+          required: true
+          schema: { type: boolean }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                employeeGroupName: { type: string }
+      responses:
+        "200": { description: Dry-run payload log }
+        "201": { description: BQE project and local record created }
+        "502": { description: BQE creation stopped with partial progress }
+  /local-projects/{id}:
+    get:
+      operationId: getLocalProject
+      tags: [pipeline]
+      summary: Get a local project
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      responses:
+        "200":
+          description: Local project
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalProject" }
+    patch:
+      operationId: updateLocalProject
+      tags: [pipeline]
+      summary: Update an open local project
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: Updated local project
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalProject" }
+  /local-projects/{id}/change-orders:
+    post:
+      operationId: createChangeOrder
+      tags: [pipeline]
+      summary: Add a local change order
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [description, reason, requestedHours]
+              properties:
+                description: { type: string }
+                reason: { type: string }
+                requestedHours: { type: number, minimum: 0 }
+                authorized: { type: boolean }
+      responses:
+        "201":
+          description: Updated local project
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalProject" }
+  /local-projects/{id}/closeout:
+    post:
+      operationId: closeLocalProject
+      tags: [pipeline]
+      summary: Validate and close a local project
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [actualHours]
+              properties:
+                actualHours:
+                  type: object
+                  additionalProperties: { type: number, minimum: 0 }
+                varianceReason: { type: string }
+                varianceNote: { type: string }
+      responses:
+        "200":
+          description: Closed local project
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalProject" }
+  /estimating/fingerprints:
+    get:
+      operationId: getEstimatingFingerprints
+      tags: [estimating]
+      summary: Get immutable historical fingerprints
+      responses:
+        "200":
+          description: Fingerprints by discipline
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /question-tree:
+    get:
+      operationId: getQuestionTree
+      tags: [estimating]
+      summary: Get the seeded intake question tree
+      responses:
+        "200":
+          description: Active question tree
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+  /bqe/clients/search:
+    get:
+      operationId: searchCachedBqeClients
+      tags: [bqe]
+      summary: Search BQE clients from PostgreSQL pull data only
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Matching cached BQE projects and clients
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
 components:
+  parameters:
+    UuidPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
   schemas:
+    LeadInput:
+      type: object
+      required: [who, what, where, source, spotter]
+      properties:
+        who: { type: string }
+        what: { type: string }
+        where: { type: string }
+        source: { type: string }
+        spotter: { type: string }
+        status:
+          type: string
+          enum: [New, Moved to Intake, Dropped]
+    LeadUpdate:
+      allOf:
+        - $ref: "#/components/schemas/LeadInput"
+      required: []
+    Lead:
+      allOf:
+        - $ref: "#/components/schemas/LeadInput"
+        - type: object
+          required: [id, status, createdAt]
+          properties:
+            id: { type: string }
+            createdAt: { type: string, format: date-time }
+    IntakeInput:
+      type: object
+      required: [client]
+      properties:
+        leadId: { type: [string, "null"] }
+        client: { type: string }
+        contact: { type: [string, "null"] }
+        phone: { type: [string, "null"] }
+        email: { type: [string, "null"] }
+        address: { type: [string, "null"] }
+        parcel: { type: [string, "null"] }
+        referralSource: { type: [string, "null"] }
+        primaryRequest: { type: [string, "null"] }
+        propertyPlans: { type: [string, "null"] }
+        disciplines:
+          type: array
+          items: { type: string }
+        answers: { type: object, additionalProperties: true }
+        drivers:
+          type: object
+          additionalProperties: { type: number, minimum: 0 }
+        stepFlags:
+          type: object
+          additionalProperties: { type: boolean }
+        contractType: { type: [string, "null"] }
+        paymentTerms: { type: [string, "null"] }
+        startDate: { type: [string, "null"], format: date }
+        targetCompletion: { type: [string, "null"], format: date }
+        pmByDiscipline:
+          type: object
+          additionalProperties: { type: string }
+        overrides: { type: object, additionalProperties: true }
+    IntakeUpdate:
+      allOf:
+        - $ref: "#/components/schemas/IntakeInput"
+      required: []
+    Intake:
+      allOf:
+        - $ref: "#/components/schemas/IntakeInput"
+        - type: object
+          required: [id, createdAt, disciplines, answers, drivers, stepFlags, pmByDiscipline, overrides]
+          properties:
+            id: { type: string }
+            estimateApprovedAt: { type: [string, "null"], format: date-time }
+            createdAt: { type: string, format: date-time }
+    Estimate:
+      type: object
+      required: [disciplines, totalHours, totalFee, rate]
+      properties:
+        disciplines:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        totalHours: { type: number }
+        totalFee: { type: number }
+        rate: { type: number }
+    LocalProject:
+      type: object
+      additionalProperties: true
+      required: [id, intakeId, projectNumber, name, client, pm, disciplines, status]
+      properties:
+        id: { type: string }
+        intakeId: { type: string }
+        projectNumber: { type: string }
+        name: { type: string }
+        client: { type: string }
+        pm: { type: string }
+        disciplines:
+          type: array
+          items: { type: string }
+        status: { type: string }
     HealthStatus:
       type: object
       properties:

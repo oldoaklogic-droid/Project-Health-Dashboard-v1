@@ -375,3 +375,436 @@ export const GetBqeReconciliationResponse = zod.object({
 })
 
 
+/**
+ * @summary List leads
+ */
+export const ListLeadsResponseItem = zod.object({
+  "who": zod.string(),
+  "what": zod.string(),
+  "where": zod.string(),
+  "source": zod.string(),
+  "spotter": zod.string(),
+  "status": zod.enum(['New', 'Moved to Intake', 'Dropped'])
+}).and(zod.object({
+  "id": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+export const ListLeadsResponse = zod.array(ListLeadsResponseItem)
+
+
+/**
+ * @summary Create a lead
+ */
+export const CreateLeadBody = zod.object({
+  "who": zod.string(),
+  "what": zod.string(),
+  "where": zod.string(),
+  "source": zod.string(),
+  "spotter": zod.string(),
+  "status": zod.enum(['New', 'Moved to Intake', 'Dropped']).optional()
+})
+
+export const CreateLeadResponse = zod.object({
+  "who": zod.string(),
+  "what": zod.string(),
+  "where": zod.string(),
+  "source": zod.string(),
+  "spotter": zod.string(),
+  "status": zod.enum(['New', 'Moved to Intake', 'Dropped'])
+}).and(zod.object({
+  "id": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+
+
+/**
+ * @summary Update a lead
+ */
+export const UpdateLeadParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const UpdateLeadBody = zod.object({
+  "who": zod.string(),
+  "what": zod.string(),
+  "where": zod.string(),
+  "source": zod.string(),
+  "spotter": zod.string(),
+  "status": zod.enum(['New', 'Moved to Intake', 'Dropped']).optional()
+})
+
+export const UpdateLeadResponse = zod.object({
+  "who": zod.string(),
+  "what": zod.string(),
+  "where": zod.string(),
+  "source": zod.string(),
+  "spotter": zod.string(),
+  "status": zod.enum(['New', 'Moved to Intake', 'Dropped'])
+}).and(zod.object({
+  "id": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+
+
+/**
+ * @summary List intakes
+ */
+export const listIntakesResponseOneDriversMinOne = 0;
+
+
+
+export const ListIntakesResponseItem = zod.object({
+  "leadId": zod.string().nullish(),
+  "client": zod.string(),
+  "contact": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "parcel": zod.string().nullish(),
+  "referralSource": zod.string().nullish(),
+  "primaryRequest": zod.string().nullish(),
+  "propertyPlans": zod.string().nullish(),
+  "disciplines": zod.array(zod.string()),
+  "answers": zod.record(zod.string(), zod.unknown()),
+  "drivers": zod.record(zod.string(), zod.number().min(listIntakesResponseOneDriversMinOne)),
+  "stepFlags": zod.record(zod.string(), zod.boolean()),
+  "contractType": zod.string().nullish(),
+  "paymentTerms": zod.string().nullish(),
+  "startDate": zod.coerce.date().nullish(),
+  "targetCompletion": zod.coerce.date().nullish(),
+  "pmByDiscipline": zod.record(zod.string(), zod.string()),
+  "overrides": zod.record(zod.string(), zod.unknown())
+}).and(zod.object({
+  "id": zod.string(),
+  "estimateApprovedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+export const ListIntakesResponse = zod.array(ListIntakesResponseItem)
+
+
+/**
+ * @summary Create an intake
+ */
+export const createIntakeBodyDriversMinOne = 0;
+
+
+
+export const CreateIntakeBody = zod.object({
+  "leadId": zod.string().nullish(),
+  "client": zod.string(),
+  "contact": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "parcel": zod.string().nullish(),
+  "referralSource": zod.string().nullish(),
+  "primaryRequest": zod.string().nullish(),
+  "propertyPlans": zod.string().nullish(),
+  "disciplines": zod.array(zod.string()).optional(),
+  "answers": zod.record(zod.string(), zod.unknown()).optional(),
+  "drivers": zod.record(zod.string(), zod.number().min(createIntakeBodyDriversMinOne)).optional(),
+  "stepFlags": zod.record(zod.string(), zod.boolean()).optional(),
+  "contractType": zod.string().nullish(),
+  "paymentTerms": zod.string().nullish(),
+  "startDate": zod.coerce.date().nullish(),
+  "targetCompletion": zod.coerce.date().nullish(),
+  "pmByDiscipline": zod.record(zod.string(), zod.string()).optional(),
+  "overrides": zod.record(zod.string(), zod.unknown()).optional()
+})
+
+export const createIntakeResponseOneDriversMinOne = 0;
+
+
+
+export const CreateIntakeResponse = zod.object({
+  "leadId": zod.string().nullish(),
+  "client": zod.string(),
+  "contact": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "parcel": zod.string().nullish(),
+  "referralSource": zod.string().nullish(),
+  "primaryRequest": zod.string().nullish(),
+  "propertyPlans": zod.string().nullish(),
+  "disciplines": zod.array(zod.string()),
+  "answers": zod.record(zod.string(), zod.unknown()),
+  "drivers": zod.record(zod.string(), zod.number().min(createIntakeResponseOneDriversMinOne)),
+  "stepFlags": zod.record(zod.string(), zod.boolean()),
+  "contractType": zod.string().nullish(),
+  "paymentTerms": zod.string().nullish(),
+  "startDate": zod.coerce.date().nullish(),
+  "targetCompletion": zod.coerce.date().nullish(),
+  "pmByDiscipline": zod.record(zod.string(), zod.string()),
+  "overrides": zod.record(zod.string(), zod.unknown())
+}).and(zod.object({
+  "id": zod.string(),
+  "estimateApprovedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+
+
+/**
+ * @summary Update an intake
+ */
+export const UpdateIntakeParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const updateIntakeBodyOneDriversMinOne = 0;
+
+
+
+export const UpdateIntakeBody = zod.object({
+  "leadId": zod.string().nullish(),
+  "client": zod.string(),
+  "contact": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "parcel": zod.string().nullish(),
+  "referralSource": zod.string().nullish(),
+  "primaryRequest": zod.string().nullish(),
+  "propertyPlans": zod.string().nullish(),
+  "disciplines": zod.array(zod.string()).optional(),
+  "answers": zod.record(zod.string(), zod.unknown()).optional(),
+  "drivers": zod.record(zod.string(), zod.number().min(updateIntakeBodyOneDriversMinOne)).optional(),
+  "stepFlags": zod.record(zod.string(), zod.boolean()).optional(),
+  "contractType": zod.string().nullish(),
+  "paymentTerms": zod.string().nullish(),
+  "startDate": zod.coerce.date().nullish(),
+  "targetCompletion": zod.coerce.date().nullish(),
+  "pmByDiscipline": zod.record(zod.string(), zod.string()).optional(),
+  "overrides": zod.record(zod.string(), zod.unknown()).optional()
+})
+
+export const updateIntakeResponseOneDriversMinOne = 0;
+
+
+
+export const UpdateIntakeResponse = zod.object({
+  "leadId": zod.string().nullish(),
+  "client": zod.string(),
+  "contact": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "parcel": zod.string().nullish(),
+  "referralSource": zod.string().nullish(),
+  "primaryRequest": zod.string().nullish(),
+  "propertyPlans": zod.string().nullish(),
+  "disciplines": zod.array(zod.string()),
+  "answers": zod.record(zod.string(), zod.unknown()),
+  "drivers": zod.record(zod.string(), zod.number().min(updateIntakeResponseOneDriversMinOne)),
+  "stepFlags": zod.record(zod.string(), zod.boolean()),
+  "contractType": zod.string().nullish(),
+  "paymentTerms": zod.string().nullish(),
+  "startDate": zod.coerce.date().nullish(),
+  "targetCompletion": zod.coerce.date().nullish(),
+  "pmByDiscipline": zod.record(zod.string(), zod.string()),
+  "overrides": zod.record(zod.string(), zod.unknown())
+}).and(zod.object({
+  "id": zod.string(),
+  "estimateApprovedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+
+
+/**
+ * @summary Recompute an intake estimate
+ */
+export const GetIntakeEstimateParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const GetIntakeEstimateResponse = zod.object({
+  "disciplines": zod.array(zod.record(zod.string(), zod.unknown())),
+  "totalHours": zod.number(),
+  "totalFee": zod.number(),
+  "rate": zod.number()
+})
+
+
+/**
+ * @summary Approve an intake estimate
+ */
+export const ApproveIntakeEstimateParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const approveIntakeEstimateResponseOneDriversMinOne = 0;
+
+
+
+export const ApproveIntakeEstimateResponse = zod.object({
+  "leadId": zod.string().nullish(),
+  "client": zod.string(),
+  "contact": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "parcel": zod.string().nullish(),
+  "referralSource": zod.string().nullish(),
+  "primaryRequest": zod.string().nullish(),
+  "propertyPlans": zod.string().nullish(),
+  "disciplines": zod.array(zod.string()),
+  "answers": zod.record(zod.string(), zod.unknown()),
+  "drivers": zod.record(zod.string(), zod.number().min(approveIntakeEstimateResponseOneDriversMinOne)),
+  "stepFlags": zod.record(zod.string(), zod.boolean()),
+  "contractType": zod.string().nullish(),
+  "paymentTerms": zod.string().nullish(),
+  "startDate": zod.coerce.date().nullish(),
+  "targetCompletion": zod.coerce.date().nullish(),
+  "pmByDiscipline": zod.record(zod.string(), zod.string()),
+  "overrides": zod.record(zod.string(), zod.unknown())
+}).and(zod.object({
+  "id": zod.string(),
+  "estimateApprovedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+
+
+/**
+ * @summary Dry-run or execute BQE project creation
+ */
+export const CreateBqeProjectParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const CreateBqeProjectQueryParams = zod.object({
+  "dryRun": zod.coerce.boolean()
+})
+
+export const CreateBqeProjectBody = zod.object({
+  "employeeGroupName": zod.string().optional()
+})
+
+export const CreateBqeProjectResponse = zod.unknown()
+
+
+/**
+ * @summary Get a local project
+ */
+export const GetLocalProjectParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const GetLocalProjectResponse = zod.object({
+  "id": zod.string(),
+  "intakeId": zod.string(),
+  "projectNumber": zod.string(),
+  "name": zod.string(),
+  "client": zod.string(),
+  "pm": zod.string(),
+  "disciplines": zod.array(zod.string()),
+  "status": zod.string()
+})
+
+
+/**
+ * @summary Update an open local project
+ */
+export const UpdateLocalProjectParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const UpdateLocalProjectBody = zod.record(zod.string(), zod.unknown())
+
+export const UpdateLocalProjectResponse = zod.object({
+  "id": zod.string(),
+  "intakeId": zod.string(),
+  "projectNumber": zod.string(),
+  "name": zod.string(),
+  "client": zod.string(),
+  "pm": zod.string(),
+  "disciplines": zod.array(zod.string()),
+  "status": zod.string()
+})
+
+
+/**
+ * @summary Add a local change order
+ */
+export const CreateChangeOrderParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const createChangeOrderBodyRequestedHoursMin = 0;
+
+
+
+export const CreateChangeOrderBody = zod.object({
+  "description": zod.string(),
+  "reason": zod.string(),
+  "requestedHours": zod.number().min(createChangeOrderBodyRequestedHoursMin),
+  "authorized": zod.boolean().optional()
+})
+
+export const CreateChangeOrderResponse = zod.object({
+  "id": zod.string(),
+  "intakeId": zod.string(),
+  "projectNumber": zod.string(),
+  "name": zod.string(),
+  "client": zod.string(),
+  "pm": zod.string(),
+  "disciplines": zod.array(zod.string()),
+  "status": zod.string()
+})
+
+
+/**
+ * @summary Validate and close a local project
+ */
+export const CloseLocalProjectParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const closeLocalProjectBodyActualHoursMinOne = 0;
+
+
+
+export const CloseLocalProjectBody = zod.object({
+  "actualHours": zod.record(zod.string(), zod.number().min(closeLocalProjectBodyActualHoursMinOne)),
+  "varianceReason": zod.string().optional(),
+  "varianceNote": zod.string().optional()
+})
+
+export const CloseLocalProjectResponse = zod.object({
+  "id": zod.string(),
+  "intakeId": zod.string(),
+  "projectNumber": zod.string(),
+  "name": zod.string(),
+  "client": zod.string(),
+  "pm": zod.string(),
+  "disciplines": zod.array(zod.string()),
+  "status": zod.string()
+})
+
+
+/**
+ * @summary Get immutable historical fingerprints
+ */
+export const GetEstimatingFingerprintsResponse = zod.record(zod.string(), zod.unknown())
+
+
+/**
+ * @summary Get the seeded intake question tree
+ */
+export const GetQuestionTreeResponseItem = zod.record(zod.string(), zod.unknown())
+export const GetQuestionTreeResponse = zod.array(GetQuestionTreeResponseItem)
+
+
+/**
+ * @summary Search BQE clients from PostgreSQL pull data only
+ */
+
+
+
+export const SearchCachedBqeClientsQueryParams = zod.object({
+  "q": zod.coerce.string().min(1)
+})
+
+export const SearchCachedBqeClientsResponseItem = zod.record(zod.string(), zod.unknown())
+export const SearchCachedBqeClientsResponse = zod.array(SearchCachedBqeClientsResponseItem)
+
+
