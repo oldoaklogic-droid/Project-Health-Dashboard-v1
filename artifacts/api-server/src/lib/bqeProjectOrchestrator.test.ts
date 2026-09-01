@@ -3,7 +3,10 @@ import test from "node:test";
 
 import { calculateEstimate } from "./estimating";
 import {
+  BQE_ACTIVITY_CODE_MAP,
   BQE_ENTITY_LOOKUPS,
+  bqeActivityCode,
+  checkBqeActivityReadiness,
   orchestrateBqeProjectCreation,
   type BqeProjectOrchestrationDependencies,
   type BqeProjectOrchestrationInput,
@@ -96,6 +99,29 @@ test("uses the live BQE collection and filter field names", () => {
   });
 });
 
+test("maintains the approved canonical-to-live survey activity mappings", () => {
+  assert.deepEqual(BQE_ACTIVITY_CODE_MAP, {
+    "S-105": "V-100",
+    "S-106": "V-259",
+    "S-104": "V-540",
+    "S-201": "V-505",
+    "S-301": "V-811",
+    "S-400": "V-302",
+    "S-302": "V-880",
+    "S-502": "V-326",
+    "S-510": "V-550",
+    "S-513": "V-329",
+    "S-616": "V-167",
+    "S-617": "V-211",
+    "S-613": "V-621",
+    "S-605": "V-200",
+    "S-604": "V-220",
+    "S-503": "V-327",
+    "S-506": "V-328",
+  });
+  assert.equal(bqeActivityCode("C-245"), "C-245");
+});
+
 test("dry run builds exact payloads and performs zero BQE requests", async () => {
   let requestCount = 0;
   const result = await orchestrateBqeProjectCreation(fixtureInput(true), {
@@ -130,6 +156,9 @@ test("dry run builds exact payloads and performs zero BQE requests", async () =>
   assert.equal(budget.endpoint, "project/dry-run%3AparentProject%3A1/budget");
   const services = (budget.payload.services as Record<string, unknown>[]);
   assert.ok(services.length > 0);
+  assert.equal(services[0].item, bqeActivityCode(fixtureInput(true).estimate.disciplines[0].activities.find(
+    (activity) => (activity.calculatedHours ?? 0) > 0,
+  )!.code));
   assert.deepEqual(
     Object.keys(services[0]).sort(),
     [
@@ -180,6 +209,54 @@ test("live mode resolves every required UUID before the first BQE POST", async (
   assert.equal(requestCount, 0);
   assert.equal(result.created.length, 0);
   assert.equal(result.payloads.length, 0);
+});
+
+test("live readiness resolves every positive-hours activity for supported disciplines", async () => {
+  const estimates = [
+    calculateEstimate({
+      disciplines: ["Short Plat", "Boundary Survey", "ALTA Survey", "Topographic Survey", "Civil Engineering"],
+      drivers: { lots: 2, acreage: 2, corners: 4, structures: 1 },
+      stepFlags: { sepa: true, easements: true, uav: true, alta_optional: true, stormwater: true, roads: true, water: true },
+    }),
+  ].filter((estimate): estimate is NonNullable<typeof estimate> => estimate !== null);
+  const lookedUp: string[] = [];
+  const result = await checkBqeActivityReadiness(estimates, {
+    getAccessToken: fakeConnection,
+    resolveUuid: async (_connection, entityType, humanKey) => {
+      assert.equal(entityType, "activity");
+      lookedUp.push(humanKey);
+      return `${ids.activity}-${lookedUp.length}`;
+    },
+  });
+
+  assert.equal(result.ready, true);
+  assert.deepEqual(result.unresolved, []);
+  assert.ok(Object.values(BQE_ACTIVITY_CODE_MAP).every((code) => lookedUp.includes(code)));
+  assert.equal(lookedUp.some((code) => Object.hasOwn(BQE_ACTIVITY_CODE_MAP, code)), false);
+});
+
+test("live readiness reports unresolved canonical and mapped activity codes", async () => {
+  const input = fixtureInput(false);
+  const firstActivity = input.estimate.disciplines[0].activities.find(
+    (activity) => (activity.calculatedHours ?? 0) > 0,
+  );
+  assert.ok(firstActivity);
+  const result = await checkBqeActivityReadiness([input.estimate], {
+    getAccessToken: fakeConnection,
+    resolveUuid: async (_connection, _entityType, humanKey) => {
+      if (humanKey === bqeActivityCode(firstActivity.code)) {
+        throw new Error(`missing live activity ${humanKey}`);
+      }
+      return ids.activity;
+    },
+  });
+
+  assert.equal(result.ready, false);
+  assert.deepEqual(result.unresolved, [{
+    canonicalCode: firstActivity.code,
+    liveCode: bqeActivityCode(firstActivity.code),
+    message: `missing live activity ${bqeActivityCode(firstActivity.code)}`,
+  }]);
 });
 
 test("live failure stops immediately and reports created objects", async () => {

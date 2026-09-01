@@ -28,6 +28,11 @@ import {
   getPhase2Run,
   toCsv,
 } from "../lib/bqePhase2Reconciliation";
+import {
+  calculateEstimate,
+  SUPPORTED_ESTIMATING_DISCIPLINES,
+} from "../lib/estimating";
+import { checkBqeActivityReadiness } from "../lib/bqeProjectOrchestrator";
 
 const router: IRouter = Router();
 router.use(requireDashboardAccess);
@@ -344,6 +349,34 @@ router.get("/admin/status", requireDashboardAdmin, async (_req, res): Promise<vo
         }
       : null,
   });
+});
+
+router.get("/admin/bqe/activity-readiness", requireDashboardAdmin, async (req, res): Promise<void> => {
+  try {
+    const estimate = calculateEstimate({
+      disciplines: [...SUPPORTED_ESTIMATING_DISCIPLINES],
+      drivers: { lots: 2, acreage: 2, corners: 4, structures: 1 },
+      stepFlags: {
+        sepa: true,
+        easements: true,
+        uav: true,
+        alta_optional: true,
+        stormwater: true,
+        roads: true,
+        water: true,
+      },
+    });
+    if (!estimate) {
+      res.status(500).json({ error: "Supported estimating disciplines could not be calculated." });
+      return;
+    }
+    res.json(await checkBqeActivityReadiness([estimate]));
+  } catch (error: unknown) {
+    req.log.error({ err: error }, "BQE activity readiness check failed");
+    res.status(502).json({
+      error: error instanceof Error ? error.message : "BQE activity readiness check failed.",
+    });
+  }
 });
 
 router.get("/admin/users", requireDashboardAdmin, async (_req, res): Promise<void> => {

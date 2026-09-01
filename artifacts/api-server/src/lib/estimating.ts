@@ -68,6 +68,14 @@ export type CanonicalDiscipline =
   | 'Landscape'
   | 'Interior';
 
+export const SUPPORTED_ESTIMATING_DISCIPLINES = [
+  'Short Plat',
+  'Boundary Survey',
+  'ALTA Survey',
+  'Topographic Survey',
+  'Civil Engineering',
+] as const satisfies readonly CanonicalDiscipline[];
+
 const disciplineDefinitions: ReadonlyArray<{
   label: CanonicalDiscipline;
   key: DisciplineKey | null;

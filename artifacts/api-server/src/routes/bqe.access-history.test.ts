@@ -169,6 +169,16 @@ mock.module("../lib/bqePhase2Reconciliation", {
   },
 });
 
+mock.module("../lib/bqeProjectOrchestrator", {
+  namedExports: {
+    checkBqeActivityReadiness: async () => ({
+      ready: true,
+      resolved: [],
+      unresolved: [],
+    }),
+  },
+});
+
 const { default: bqeRouter } = await import("./bqe");
 
 const app = express();

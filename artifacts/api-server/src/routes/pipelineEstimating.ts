@@ -13,7 +13,10 @@ import {
 } from "../middlewares/requireDashboardAccess";
 import { calculateEstimate } from "../lib/estimating";
 import { getQuestionTree } from "../lib/questionTreeSeed";
-import { orchestrateBqeProjectCreation } from "../lib/bqeProjectOrchestrator";
+import {
+  checkBqeActivityReadiness,
+  orchestrateBqeProjectCreation,
+} from "../lib/bqeProjectOrchestrator";
 
 const router: IRouter = Router();
 router.use(requireDashboardAccess);
@@ -229,6 +232,14 @@ router.post("/intakes/:id/create-project", requireDashboardEditor, async (req, r
   if (!employeeGroupName) return void fail(res, 400, "A BQE employee group is required.");
   try {
     if (!dryRun) {
+      const readiness = await checkBqeActivityReadiness([estimate]);
+      if (!readiness.ready) {
+        res.status(409).json({
+          error: "BQE activity catalog is not ready for this approved estimate.",
+          readiness,
+        });
+        return;
+      }
       const [existingProject] = await db
         .select({ id: localProjectsTable.id })
         .from(localProjectsTable)

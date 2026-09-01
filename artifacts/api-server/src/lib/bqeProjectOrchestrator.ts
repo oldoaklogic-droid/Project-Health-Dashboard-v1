@@ -18,6 +18,33 @@ export const BQE_ENTITY_LOOKUPS: Record<
   employeeGroup: { path: "group", field: "name" },
 };
 
+/**
+ * Canonical estimator codes are stable historical labels. The live BQE
+ * activity catalog uses the V-series for the corresponding survey work.
+ */
+export const BQE_ACTIVITY_CODE_MAP: Readonly<Record<string, string>> = {
+  "S-105": "V-100",
+  "S-106": "V-259",
+  "S-104": "V-540",
+  "S-201": "V-505",
+  "S-301": "V-811",
+  "S-400": "V-302",
+  "S-302": "V-880",
+  "S-502": "V-326",
+  "S-510": "V-550",
+  "S-513": "V-329",
+  "S-616": "V-167",
+  "S-617": "V-211",
+  "S-613": "V-621",
+  "S-605": "V-200",
+  "S-604": "V-220",
+  "S-503": "V-327",
+  "S-506": "V-328",
+};
+
+export const bqeActivityCode = (canonicalCode: string): string =>
+  BQE_ACTIVITY_CODE_MAP[canonicalCode] ?? canonicalCode;
+
 export type BqeProjectOrchestrationInput = {
   intake: Intake;
   localProject: LocalProject;
@@ -53,6 +80,12 @@ export type BqeProjectOrchestrationDependencies = {
     method: "GET" | "POST",
     payload?: Json,
   ) => Promise<unknown>;
+};
+
+export type BqeActivityReadinessResult = {
+  ready: boolean;
+  resolved: Array<{ canonicalCode: string; liveCode: string; id: string }>;
+  unresolved: Array<{ canonicalCode: string; liveCode: string; message: string }>;
 };
 
 export class BqeProjectOrchestrationError extends Error {
@@ -158,6 +191,39 @@ async function resolveUuid(
   return bqeUuid;
 }
 
+export async function checkBqeActivityReadiness(
+  estimates: readonly EstimateResult[],
+  dependencies: Pick<BqeProjectOrchestrationDependencies, "getAccessToken" | "resolveUuid"> = {},
+): Promise<BqeActivityReadinessResult> {
+  const connection = await (dependencies.getAccessToken ?? getBqeAccessToken)();
+  const resolve = dependencies.resolveUuid ?? resolveUuid;
+  const canonicalCodes = [...new Set(estimates.flatMap((estimate) =>
+    estimate.disciplines.flatMap((discipline) =>
+      discipline.activities
+        .filter((activity) => numeric(activity.calculatedHours) > 0)
+        .map((activity) => activity.code),
+    ),
+  ))].sort();
+  const resolved: BqeActivityReadinessResult["resolved"] = [];
+  const unresolved: BqeActivityReadinessResult["unresolved"] = [];
+
+  for (const canonicalCode of canonicalCodes) {
+    const liveCode = bqeActivityCode(canonicalCode);
+    try {
+      const id = await resolve(connection, "activity", liveCode);
+      resolved.push({ canonicalCode, liveCode, id });
+    } catch (error: unknown) {
+      unresolved.push({
+        canonicalCode,
+        liveCode,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return { ready: unresolved.length === 0, resolved, unresolved };
+}
+
 function verificationMismatches(sent: Json, received: Json): string[] {
   return Object.entries(sent).flatMap(([key, expected]) => {
     const actual = received[key];
@@ -191,20 +257,21 @@ export async function orchestrateBqeProjectCreation(
   let failedKind = "project";
   const register = (kind: string, path: string, payload: Json) => payloads.push({ kind, endpoint: path, payload });
   const resolveForRun = async (entityType: EntityType, humanKey: string): Promise<string> => {
-    const cacheKey = `${entityType}:${humanKey}`;
+    const lookupKey = entityType === "activity" ? bqeActivityCode(humanKey) : humanKey;
+    const cacheKey = `${entityType}:${lookupKey}`;
     const cached = resolvedIds.get(cacheKey);
     if (cached) return cached;
     try {
-      const id = await resolve(connection, entityType, humanKey);
+      const id = await resolve(connection, entityType, lookupKey);
       resolvedIds.set(cacheKey, id);
       return id;
     } catch (error: unknown) {
       if (!input.dryRun) throw error;
       const message = error instanceof Error ? error.message : String(error);
-      const placeholder = `dry-run:unresolved:${entityType}:${humanKey}`;
+      const placeholder = `dry-run:unresolved:${entityType}:${lookupKey}`;
       warnings.push(message);
       resolvedIds.set(cacheKey, placeholder);
-      logger.warn({ entityType, humanKey, placeholder, err: error }, "BQE dry-run using unresolved lookup placeholder");
+      logger.warn({ entityType, humanKey: lookupKey, placeholder, err: error }, "BQE dry-run using unresolved lookup placeholder");
       return placeholder;
     }
   };
@@ -314,7 +381,7 @@ export async function orchestrateBqeProjectCreation(
         const billRate = numeric((activity as unknown as Json).billRate, numeric(input.estimate.rate));
         services.push({
           itemId: activityId, resourceId: target.managerId,
-          resourceGroupId, isResourceGroup: false, itemType: 1, item: activity.code,
+          resourceGroupId, isResourceGroup: false, itemType: 1, item: bqeActivityCode(activity.code),
           description: activity.desc ?? activity.code, hours, billRate, costRate: 0,
           chargeAmount: hours * billRate, tax1: 0, tax2: 0, tax3: 0, memo: "",
         });
