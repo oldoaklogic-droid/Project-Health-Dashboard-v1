@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startBqeKeepalive } from "./lib/bqe";
+import { startNightlyHealthRefresh } from "./lib/projectHealth";
 
 const rawPort = process.env["PORT"];
 
@@ -20,6 +21,7 @@ const server = app.listen(port);
 server.once("listening", () => {
   logger.info({ port }, "Server listening");
   startBqeKeepalive();
+  startNightlyHealthRefresh();
 });
 
 server.once("error", (error: NodeJS.ErrnoException) => {

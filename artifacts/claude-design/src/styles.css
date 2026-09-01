@@ -485,3 +485,22 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .self-center { align-self: center; }
 .ml-2 { margin-left: 8px; }
 .mt-1 { margin-top: 4px; }
+
+/* Print Styles */
+@media print {
+  @page { margin: 0.5in; size: landscape; }
+  body { background: white; color: black; }
+  .hub-header, .hub-nav, .account-actions, .print-hidden, .tabs, .wing-heading-meta { display: none !important; }
+  .sheet-frame { height: auto !important; min-height: 0; box-shadow: none !important; border: none !important; background: white !important; }
+  .hub-layout, .sheet-page { padding: 0 !important; height: auto !important; display: block !important; }
+  .content { padding: 0 !important; max-width: 100% !important; margin: 0 !important; }
+  .print-portfolio { page-break-inside: avoid; }
+  .print-header { padding: 0 0 20px 0 !important; border-bottom: 2px solid black !important; background: transparent !important; }
+  .blueprint { box-shadow: none !important; border: 1px solid #ccc !important; padding: 15px !important; margin-bottom: 20px !important; page-break-inside: avoid; }
+  .table-wrap { overflow: visible !important; border: none !important; margin-top: 10px !important; }
+  table { width: 100% !important; border-collapse: collapse !important; background: white !important; font-size: 10pt !important; }
+  th, td { border-bottom: 1px solid #ddd !important; padding: 6px 8px !important; color: black !important; }
+  th { background: #f5f5f5 !important; font-weight: bold !important; color: black !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  h2, h3, h4 { color: black !important; margin-bottom: 10px !important; }
+  .title-block { display: none !important; }
+}

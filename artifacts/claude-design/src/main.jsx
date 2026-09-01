@@ -106,9 +106,9 @@ function SheetTitleBlock({ page, userName }) {
 
 function SheetPage({ page, userName, data, children }) {
   const meta = pageMeta[page] ?? pageMeta.home;
-  const status = page === "reports" || page === "admin" || page === "home" || page === "estimating" || page === "pipeline"
+  const status = page === "reports" || page === "admin" || page === "home" || page === "estimating" || page === "pipeline" || page === "projects" || page === "manager"
     ? "ISSUED"
-    : `PHASE ${page === "projects" ? "2" : page === "manager" ? "5" : "7"}`;
+    : `PHASE 7`;
   return (
     <div className={`sheet-page sheet-page-${page}`} data-testid={`sheet-page-${page}`}>
       {page !== "home" && (
@@ -140,10 +140,10 @@ function SheetPage({ page, userName, data, children }) {
 function HomeView({ onNavigate, isAdmin, userName }) {
   const wings = [
     ["R-100", "Reports", "Financial reconciliation, project health, report pack", "issued", "reports"],
-    ["P-100", "Projects", "Budget vs actual, project health, measurement", "phase2", "projects"],
+    ["P-100", "Projects", "Budget vs actual, project health, measurement", "issued", "projects"],
     ["E-100", "Estimating", "Project, multi-discipline, and principal's worksheet", "issued", "estimating"],
     ["L-100", "Pipeline", "Lead → intake → estimate → contract → project", "issued", "pipeline"],
-    ["M-100", "Manager dashboard", "PM financials, team KPIs, Tuesday review", "phase5", "manager"],
+    ["M-100", "Manager dashboard", "PM financials, team KPIs, Tuesday review", "issued", "manager"],
   ];
   if (isAdmin) wings.push(["X-100", "Admin", "BQE connection, user roles, data pull status", "issued", "admin"]);
   return (
@@ -216,111 +216,649 @@ function ReportsView({ data, access, view, setView, query, setQuery, pmFilter, s
   );
 }
 
-function ProjectsView({ projects, onOpen }) {
-  const targetCodes = ["23-0091", "23-0147", "24-0022"];
-  const focusedProjects = targetCodes.map(code => projects.find(p => p.code === code)).filter(Boolean);
+function ProjectsView({ onOpen }) {
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/projects", { credentials: "include" })
+      .then(res => res.json())
+      .then(data => { setProjects(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
 
   return (
     <div className="content fade-in" data-testid="projects-view">
       <div className="page-header">
         <h2>Live Project Tracking</h2>
-        <p className="muted">Focused reconciled records for key active projects.</p>
+        <p className="muted">All active projects in the portfolio.</p>
       </div>
 
-      {focusedProjects.length > 0 ? (
-        <div className="focused-projects-list">
-          {focusedProjects.map(project => (
-            <Blueprint key={project.code} className="focused-project-card">
-              <div className="focused-project-header">
-                <div>
-                  <h3>{project.code} — {project.name}</h3>
-                  <p className="muted">{project.client} · PM: {project.pm}</p>
-                </div>
-                <button className="secondary" onClick={() => onOpen(project.code)}>View Details</button>
-              </div>
-              <div className="finance-grid compact mt-4">
-                <div className="finance">
-                  <small className="muted">Actual Hours</small>
-                  <strong>{metricValue(project.actualHours)}</strong>
-                </div>
-                <div className="finance">
-                  <small className="muted">Budget Hours</small>
-                  <strong>{metricValue(project.budgetHours)}</strong>
-                </div>
-                <div className="finance">
-                  <small className="muted">Invoiced</small>
-                  <strong>{metricValue(project.invoicedAmount, money)}</strong>
-                </div>
-                <div className="finance">
-                  <small className="muted">Paid</small>
-                  <strong>{metricValue(project.paidAmount, money)}</strong>
-                </div>
-              </div>
-
-              {project.reconciliationHours !== null && (
-                <div className="table-wrap mt-6 pt-6 border-t">
-                  <h4 className="mb-3">2026 Reconciliation</h4>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Metric</th>
-                        <th>Exact project</th>
-                        <th>Parent + child projects</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>Hours</td>
-                        <td>{metricValue(project.reconciliationHours)}</td>
-                        <td>{metricValue(project.reconciliationRolledUpHours)}</td>
-                      </tr>
-                      <tr>
-                        <td>Invoiced</td>
-                        <td>{metricValue(project.reconciliationInvoicedAmount, money)}</td>
-                        <td>{metricValue(project.reconciliationRolledUpInvoicedAmount, money)}</td>
-                      </tr>
-                      <tr>
-                        <td>Paid</td>
-                        <td>{metricValue(project.reconciliationPaidAmount, money)}</td>
-                        <td>{metricValue(project.reconciliationRolledUpPaidAmount, money)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </Blueprint>
-          ))}
-        </div>
+      {loading ? (
+        <Blueprint><div className="notice">Loading projects...</div></Blueprint>
+      ) : projects.length > 0 ? (
+        <Blueprint className="pt-0 pb-0" style={{ padding: 0 }}>
+          <div className="table-wrap" style={{ margin: 0, borderTop: 0 }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Project #</th>
+                  <th>Project</th>
+                  <th>Client</th>
+                  <th>PM</th>
+                  <th>Health</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {projects.map(project => (
+                  <tr key={project.id} onClick={() => onOpen(project.id)} style={{ cursor: "pointer" }}>
+                    <td>{project.number}</td>
+                    <td><b>{project.name}</b></td>
+                    <td><span className="muted">{project.client}</span></td>
+                    <td>{project.pm}</td>
+                    <td><span className={`badge ${project.severity}`}>{project.severity}</span></td>
+                    <td style={{ textAlign: "right" }}>
+                      <button className="text-button" onClick={(e) => { e.stopPropagation(); onOpen(project.id); }}>View →</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Blueprint>
       ) : (
         <Blueprint className="empty-state placeholder-panel pt-6 pb-6">
            <div className="placeholder-icon"><FolderIcon /></div>
-           <h2>No target projects found</h2>
-           <p className="muted">Target projects not found in current payload.</p>
+           <h2>No projects found</h2>
+           <p className="muted">No projects found.</p>
         </Blueprint>
       )}
-
-      <Blueprint className="phase2-notice mt-6">
-        <div className="notice-icon"><FolderIcon /></div>
-        <div className="notice-content">
-          <h3>In development — Phase 2</h3>
-          <p className="muted">Comprehensive project management workflows, scheduling integration, and expanded project views are scheduled for Phase 2.</p>
-        </div>
-      </Blueprint>
     </div>
   );
 }
 
 
-function ManagerView() {
-  return <div className="content fade-in" data-testid="manager-view">
-    <div className="page-header"><span className="overline">Manager Dashboard</span><h2>Every PM prepared for Tuesday</h2><p className="muted">The future manager view will turn project evidence into a focused coaching and accountability rhythm.</p></div>
-    <div className="module-grid manager-grid">
-      <Blueprint className="module-card"><div className="placeholder-icon"><UsersIcon /></div><h3>Per-PM Tuesday review</h3><p className="muted">A role-focused exception queue for deliverables, blockers, client contact, and owned next actions.</p></Blueprint>
-      <Blueprint className="module-card"><div className="placeholder-icon"><BarChartIcon /></div><h3>Team KPI view</h3><p className="muted">A concise portfolio view of workload, evidence coverage, financial exposure, and follow-through.</p></Blueprint>
+function ProjectDetailView({ code, onBack, access }) {
+  const [project, setProject] = useState(null);
+  const [plan, setPlan] = useState(null);
+  const [actions, setActions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [healthRules, setHealthRules] = useState([]);
+  
+  const [noteForm, setNoteForm] = useState({ riskLine: "", actionLine: "", percentComplete: "" });
+  const [contactForm, setContactForm] = useState({ method: "", summary: "" });
+  const [healthForm, setHealthForm] = useState({ status: "", reason: "" });
+  const [actionForm, setActionForm] = useState({ what: "", ownerEmployeeId: "", dueDate: "" });
+
+  const loadAll = async () => {
+    try {
+      setLoading(true);
+      const [projRes, rulesRes] = await Promise.all([
+        fetch(`/api/manager/projects/${encodeURIComponent(code)}`, { credentials: "include" }),
+        fetch(`/api/health-rules`, { credentials: "include" })
+      ]);
+      if (!projRes.ok) throw new Error("Failed to load project details");
+      const projData = await projRes.json();
+      setProject(projData);
+      setActions(projData.actions || []);
+      setPlan({ hasBudget: projData.metrics?.budgetHours != null, phases: projData.phases || [] });
+      setNoteForm({
+        riskLine: projData.pmNote?.riskLine || "",
+        actionLine: projData.pmNote?.actionLine || "",
+        percentComplete: projData.pmNote?.percentComplete ?? projData.percentComplete ?? "",
+      });
+      
+      const rulesData = await rulesRes.ok ? await rulesRes.json() : [];
+      setHealthRules(rulesData);
+
+      setError(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadAll(); }, [code]);
+
+  const postData = async (url, data, method="POST") => {
+    const res = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error((await res.json()).error || "Request failed");
+    await loadAll();
+  };
+
+  if (loading) return <div className="content fade-in" data-testid="project-detail-view"><Blueprint><div className="notice">Loading project {code}...</div></Blueprint></div>;
+  if (error || !project) return <div className="content fade-in" data-testid="project-detail-view"><Blueprint><div className="notice error">{error || "Not found"}</div></Blueprint></div>;
+
+  const projectId = project.id || code;
+
+  return (
+    <div className="content fade-in" data-testid="project-detail-view">
+      <div className="page-header" style={{ marginBottom: "0" }}>
+        <button onClick={onBack} className="text-button mb-3" style={{ fontSize: "14px" }}>← Back to Projects</button>
+        <h2>{project.number} — {project.name}</h2>
+        <p className="muted">{project.client} · PM: {project.pm}</p>
+      </div>
+
+      <div className="metric-grid mb-3">
+        <Metric label="Budget vs actual" value={project.metrics?.budgetHours == null ? `UNKNOWN / ${metricValue(project.metrics?.actualHours)}h` : `${metricValue(project.metrics.budgetHours)} / ${metricValue(project.metrics.actualHours)}h`} />
+        <Metric label="Fee consumed" value={`${metricValue(project.metrics?.invoicedAmount || 0, money)} / ${metricValue(project.metrics?.contractAmount || 0, money)}`} />
+        <Metric label="Percent complete" value={`${metricValue(project.percentComplete)}%`} />
+        <Metric label="AR / oldest" value={`${metricValue(project.metrics?.arTotal || 0, money)} / ${project.metrics?.oldestPastDueDays ?? 0}d`} />
+        <Metric label="Next milestone" value={project.nextMilestone || "TBD"} />
+      </div>
+
+      <div className="two-col">
+        <Blueprint>
+          <div className="section-heading"><h3>Health Control</h3></div>
+          <div className="mb-3">
+            <span className={`badge ${project.severity}`}>Displayed: {project.severity}</span>
+            <span className={`badge ${project.computedSeverity} ml-2`}>Computed: {project.computedSeverity}</span>
+            {project.override && <p className="muted mt-2">Override: {project.override.severity} — {project.override.reason}</p>}
+          </div>
+          {access?.canEdit && (
+            <div className="overlay-form pt-6 border-t mt-4">
+              <div className="form-grid">
+                <label><span>Override Status</span>
+                  <select value={healthForm.status} onChange={e => setHealthForm({...healthForm, status: e.target.value})}>
+                    <option value="">Select...</option>
+                    <option value="red">Red</option><option value="yellow">Yellow</option><option value="green">Green</option><option value="gray">Gray</option>
+                  </select>
+                </label>
+                <label style={{ gridColumn: "span 2" }}><span>Reason</span>
+                  <input value={healthForm.reason} onChange={e => setHealthForm({...healthForm, reason: e.target.value})} placeholder="Why?" />
+                </label>
+              </div>
+              <button className="secondary mt-4" disabled={!healthForm.status || !healthForm.reason} onClick={() => postData(`/api/projects/${encodeURIComponent(projectId)}/health-override`, { severity: healthForm.status, reason: healthForm.reason }).then(() => setHealthForm({status:"", reason:""}))}>Set Health</button>
+            </div>
+          )}
+        </Blueprint>
+        
+        <Blueprint>
+          <div className="section-heading"><h3>Current Period Time</h3></div>
+          {project.timeEntries?.length > 0 ? (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Date</th><th>Employee</th><th>Activity</th><th>Hours</th></tr></thead>
+                <tbody>
+                  {project.timeEntries.slice(0, 25).map(entry => (
+                    <tr key={entry.recordId}><td>{entry.entryDate}</td><td>{entry.employee}</td><td>{entry.activityCode || "—"}</td><td>{metricValue(entry.hours)}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="muted mt-4">No recent time entries.</p>
+          )}
+        </Blueprint>
+      </div>
+
+      <div className="two-col mt-4">
+        <Blueprint>
+          <div className="section-heading"><h3>Project Actions</h3></div>
+          {actions.length > 0 ? (
+            <div className="table-wrap mb-4">
+              <table>
+                <thead><tr><th>What</th><th>Status</th><th>Owner</th><th/></tr></thead>
+                <tbody>
+                  {actions.map(a => (
+                    <tr key={a.id}>
+                      <td>{a.what}</td>
+                      <td>{a.status}</td>
+                      <td>{a.ownerEmployeeId || "—"}</td>
+                      <td style={{textAlign:"right"}}>
+                         {a.status !== "closed" && access?.canEdit && <button className="text-button" onClick={() => postData(`/api/actions/${encodeURIComponent(a.id)}`, { status: "closed" }, "PATCH")}>Close</button>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : <p className="muted mt-4 mb-4">No actions.</p>}
+          {access?.canEdit && (
+            <div className="overlay-form pt-4 border-t">
+              <label><span>Add Action</span>
+                <div className="flex mt-1 mb-3" style={{display:"flex", gap:"8px"}}>
+                  <input value={actionForm.what} onChange={e => setActionForm({...actionForm, what: e.target.value})} placeholder="What needs to be done?" style={{flex: 1}} />
+                   <input value={actionForm.ownerEmployeeId} onChange={e => setActionForm({...actionForm, ownerEmployeeId: e.target.value})} placeholder="Owner" style={{width:"120px"}} />
+                   <input type="date" value={actionForm.dueDate} onChange={e => setActionForm({...actionForm, dueDate: e.target.value})} />
+                </div>
+                 <button className="secondary" disabled={!actionForm.what} onClick={() => postData(`/api/actions`, { ...actionForm, projectId }).then(() => setActionForm({what:"", ownerEmployeeId:"", dueDate:""}))}>Add Action</button>
+              </label>
+            </div>
+          )}
+        </Blueprint>
+
+        <Blueprint>
+          <div className="section-heading"><h3>PM Notes & Contact Log</h3></div>
+          {access?.canEdit && (
+            <div className="overlay-form pt-0 border-t-0">
+               <label><span>Risk line</span>
+                 <input value={noteForm.riskLine} onChange={e => setNoteForm({...noteForm, riskLine: e.target.value})} placeholder="Current project risk" className="mt-1 mb-3" style={{width: "100%"}} />
+               </label>
+               <label><span>Action line</span>
+                 <input value={noteForm.actionLine} onChange={e => setNoteForm({...noteForm, actionLine: e.target.value})} placeholder="Next action" className="mt-1 mb-3" style={{width: "100%"}} />
+               </label>
+               <label><span>Percent complete</span>
+                 <input type="number" min="0" max="100" value={noteForm.percentComplete} onChange={e => setNoteForm({...noteForm, percentComplete: e.target.value})} className="mt-1 mb-3" />
+                 <button className="secondary" onClick={() => postData(`/api/projects/${encodeURIComponent(projectId)}/notes`, noteForm)}>Save PM Note</button>
+              </label>
+
+              <div className="border-t pt-4 mt-4">
+                <label><span>Contact Log</span>
+                  <div className="flex mt-1 mb-3" style={{display:"flex", gap:"8px"}}>
+                    <input value={contactForm.method} onChange={e => setContactForm({...contactForm, method: e.target.value})} placeholder="Method" style={{width:"100px"}} />
+                    <input value={contactForm.summary} onChange={e => setContactForm({...contactForm, summary: e.target.value})} placeholder="Summary..." style={{flex: 1}} />
+                  </div>
+                  <button className="secondary" disabled={!contactForm.method || !contactForm.summary} onClick={() => postData(`/api/projects/${encodeURIComponent(projectId)}/contact-log`, contactForm).then(() => setContactForm({method:"", summary:""}))}>Save Contact</button>
+                </label>
+              </div>
+            </div>
+          )}
+        </Blueprint>
+      </div>
+
+      <div className="two-col mt-4">
+        <Blueprint>
+          <div className="section-heading"><h3>Activity breakdown</h3></div>
+          <div className="table-wrap"><table>
+            <thead><tr><th>Activity</th><th>Budget</th><th>Actual</th><th>Variance</th></tr></thead>
+            <tbody>{(project.activities || []).map(activity => <tr key={activity.code}>
+              <td>{activity.code} — {activity.name}</td>
+              <td>{activity.planned == null ? "UNKNOWN" : metricValue(activity.planned)}</td>
+              <td>{metricValue(activity.actual)}</td>
+              <td>{activity.variance == null ? "—" : metricValue(activity.variance)}</td>
+            </tr>)}</tbody>
+          </table></div>
+        </Blueprint>
+        <Blueprint>
+          <div className="section-heading"><h3>Invoices</h3></div>
+          <div className="table-wrap"><table>
+            <thead><tr><th>Invoice</th><th>Date</th><th>Amount</th><th>Balance</th><th>Past due</th></tr></thead>
+            <tbody>{(project.invoices || []).map(invoice => <tr key={invoice.id}>
+              <td>{invoice.number}</td><td>{invoice.date}</td><td>{metricValue(invoice.amount, money)}</td>
+              <td>{metricValue(invoice.balance, money)}</td><td>{invoice.pastDueDays ?? 0}d</td>
+            </tr>)}</tbody>
+          </table></div>
+        </Blueprint>
+      </div>
+      <Blueprint className="mt-4">
+        <div className="section-heading"><h3>Client contact log</h3></div>
+        {(project.contacts || []).map(contact => <p key={contact.id}><b>{contact.contactDate} · {contact.method}</b> — {contact.summary}</p>)}
+      </Blueprint>
     </div>
-    <div className="phase2-badge">In development</div>
-  </div>;
+  );
 }
+
+function ManagerView({ projectsData, openCard, access }) {
+  const [tab, setTab] = useState("portfolio");
+  const [portfolioResponse, setPortfolioResponse] = useState(null);
+  const [portfolio, setPortfolio] = useState([]);
+  const [capacity, setCapacity] = useState(null);
+  const [actions, setActions] = useState([]);
+  const [healthRules, setHealthRules] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [portRes, capRes, actRes, rulesRes] = await Promise.all([
+        fetch("/api/manager/portfolio?view=portfolio", { credentials: "include" }),
+        fetch("/api/manager/capacity?weeks=4", { credentials: "include" }),
+        fetch("/api/actions", { credentials: "include" }),
+        fetch("/api/health-rules", { credentials: "include" })
+      ]);
+      if (!portRes.ok) throw new Error("API not available.");
+      if (portRes.ok) {
+        const payload = await portRes.json();
+        setPortfolioResponse(payload);
+        setPortfolio(payload.projects || []);
+      }
+      if (capRes.ok) setCapacity(await capRes.json());
+      if (actRes.ok) setActions(await actRes.json());
+      if (rulesRes.ok) setHealthRules(await rulesRes.json());
+      setError(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadData(); }, []);
+
+  if (loading) return <div className="reports-view fade-in" data-testid="manager-view"><div className="content"><Blueprint><div className="notice">Loading manager data...</div></Blueprint></div></div>;
+  if (error) return <div className="reports-view fade-in" data-testid="manager-view"><div className="content"><Blueprint className="empty-state placeholder-panel pt-6 pb-6"><div className="placeholder-icon"><BarChartIcon /></div><h2>Manager Dashboard</h2><p className="muted">{error}</p><button className="secondary mt-4" onClick={loadData}>Retry</button></Blueprint></div></div>;
+
+  const redProjects = portfolioResponse?.red || [];
+  const yellowProjects = portfolioResponse?.yellow || [];
+  const grayProjects = portfolioResponse?.gray || [];
+  const scoreboard = portfolioResponse?.scoreboard || {};
+
+  const getRuleNames = (project) => {
+    if (project.override) return `Override: ${project.override.reason}`;
+    if (!project.triggeredRules?.length) return "Green otherwise";
+    return project.triggeredRules.map(rule => rule.name).join(", ");
+  };
+
+  const renderPortfolioRow = (p) => (
+    <tr key={p.id} className="list-item" onClick={() => openCard(p.id)} style={{cursor: "pointer"}}>
+      <td><strong>{p.number}</strong></td>
+      <td>{p.name}</td>
+      <td>{p.client}</td>
+      <td>{p.pm}</td>
+      <td>{metricValue(p.fee, money)}</td>
+      <td><span className="muted">{getRuleNames(p)}</span></td>
+      <td>{p.riskLine || "—"}</td>
+      <td>{p.actionLine || "—"}</td>
+      <td>{p.daysSinceLastPmNote == null ? "Never" : `${p.daysSinceLastPmNote}d`}</td>
+    </tr>
+  );
+
+  const lateActions = actions.filter(a => a.status !== "closed" && a.dueDate && new Date(a.dueDate) < new Date());
+  const openActions = actions.filter(a => a.status !== "closed" && !lateActions.includes(a));
+  const closedActions = actions.filter(a => a.status === "closed");
+  const sortedActions = [...lateActions, ...openActions, ...closedActions];
+
+  const postAction = async (data) => {
+    await fetch("/api/actions", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(data) });
+    loadData();
+  };
+
+  const closeAction = async (id) => {
+    await fetch(`/api/actions/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ status: "closed" }) });
+    loadData();
+  };
+
+  return (
+    <div className="reports-view fade-in" data-testid="manager-view">
+      <header className="reports-header print-header">
+        <div>
+          <h2>Manager Dashboard</h2>
+          <p className="muted">Prepare for Tuesday review with a clear team view.</p>
+        </div>
+      </header>
+      <nav className="tabs print-hidden" aria-label="Manager views">
+        <button className={tab === "portfolio" ? "active" : ""} onClick={() => setTab("portfolio")}>Portfolio</button>
+        <button className={tab === "my_projects" ? "active" : ""} onClick={() => setTab("my_projects")}>My Projects</button>
+        <button className={tab === "plan_vs_actual" ? "active" : ""} onClick={() => setTab("plan_vs_actual")}>Plan vs Actual</button>
+      </nav>
+      <div className="reports-content pt-6 pb-6 print-portfolio">
+        {tab === "portfolio" && (
+          <div className="content">
+            <div className="metric-grid mb-3">
+              <Metric label="Active roots" value={scoreboard.activeCount ?? 0} />
+              <Metric label="Fee under management" value={metricValue(scoreboard.feeUnderManagement || 0, money)} />
+              <Metric label="Unbilled WIP estimate" value={metricValue(scoreboard.unbilledWipEstimate || 0, money)} />
+              <Metric label="AR total / over 60" value={`${metricValue(scoreboard.arTotal || 0, money)} / ${metricValue(scoreboard.arOver60 || 0, money)}`} />
+              <Metric label="Red / Yellow / Gray" value={`${scoreboard.redCount || 0} / ${scoreboard.yellowCount || 0} / ${scoreboard.grayCount || 0}`} accent />
+            </div>
+
+            <Blueprint className="mb-4 pt-0 pb-0" style={{padding:0}}>
+              <div className="section-heading" style={{padding: "20px 20px 0"}}>
+                <h3 className="danger" style={{color:"var(--danger)"}}>Needs Attention Now (Red)</h3>
+              </div>
+              <div className="table-wrap" style={{marginTop:0, borderTop:0}}>
+                <table>
+                  <thead><tr><th>Project</th><th>Name</th><th>Client</th><th>PM</th><th>Fee</th><th>Rule</th><th>Risk</th><th>Action</th><th>PM note</th></tr></thead>
+                  <tbody>{redProjects.map(renderPortfolioRow)}</tbody>
+                </table>
+              </div>
+            </Blueprint>
+
+            <Blueprint className="mb-4 pt-0 pb-0" style={{padding:0}}>
+              <div className="section-heading" style={{padding: "20px 20px 0"}}>
+                <h3 style={{color: "#d9aa3e"}}>Trending Wrong (Yellow)</h3>
+              </div>
+              <div className="table-wrap" style={{marginTop:0, borderTop:0}}>
+                <table>
+                  <thead><tr><th>Project</th><th>Name</th><th>Client</th><th>PM</th><th>Fee</th><th>Rule</th><th>Risk</th><th>Action</th><th>PM note</th></tr></thead>
+                  <tbody>{yellowProjects.map(renderPortfolioRow)}</tbody>
+                </table>
+              </div>
+            </Blueprint>
+
+            <Blueprint className="mb-4 pt-0 pb-0" style={{padding:0}}>
+              <details>
+                <summary className="section-heading" style={{cursor:"pointer", marginBottom:0, padding: "20px 20px 0"}}>
+                  <h3 className="muted">Needs a Decision ({grayProjects.length})</h3>
+                </summary>
+                <div className="table-wrap" style={{marginTop:0}}>
+                  <table>
+                    <thead><tr><th>Project</th><th>Name</th><th>Client</th><th>PM</th><th>Fee</th><th>Rule</th><th>Risk</th><th>Action</th><th>PM note</th></tr></thead>
+                    <tbody>{grayProjects.map(renderPortfolioRow)}</tbody>
+                  </table>
+                </div>
+              </details>
+            </Blueprint>
+
+            <div className="two-col">
+              <Blueprint>
+                <div className="section-heading"><h3>Team Capacity</h3></div>
+                <p className="muted small">{capacity?.label || "based on recent actuals"}</p>
+                {capacity?.disciplines?.length > 0 ? (
+                  <div className="bars mb-4">
+                    {capacity.disciplines.map(discipline => (
+                      <Bar key={discipline.discipline} label={`${discipline.discipline} (${discipline.headcount})`} value={Number(discipline.actualHours)} max={Number(discipline.availableHours) || 1} tone={discipline.utilization > .9 ? "high" : "medium"} />
+                    ))}
+                  </div>
+                ) : <p className="muted mt-4">No capacity data.</p>}
+                <div className="table-wrap border-t pt-4">
+                  <table>
+                    <thead><tr><th>Employee</th><th>Week</th><th>Actual Hrs</th><th>Available</th></tr></thead>
+                    <tbody>
+                      {capacity?.disciplines?.flatMap(discipline => discipline.people).map((person, i) => (
+                        <tr key={`${person.discipline}-${person.employee}-${i}`}>
+                          <td>{person.employee} {person.flag && <span className="badge high ml-2">{person.flag}</span>}</td>
+                          <td>{person.discipline}</td>
+                          <td>{metricValue(person.actualHours)}</td>
+                          <td>{metricValue(person.availableHours)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Blueprint>
+
+              <Blueprint>
+                <div className="section-heading">
+                  <div>
+                    <h3>Actions</h3>
+                    <p className="muted small mt-1">{lateActions.length} late, {openActions.length} open, {closedActions.length} closed</p>
+                  </div>
+                </div>
+                <div className="table-wrap mb-4">
+                  <table>
+                    <thead><tr><th>What</th><th>Status</th><th>Owner</th><th/></tr></thead>
+                    <tbody>
+                      {sortedActions.map(a => (
+                        <tr key={a.id}>
+                          <td><strong style={{color: a.status !== "done" && a.dueDate && new Date(a.dueDate) < new Date() ? "var(--danger)" : "inherit"}}>{a.what}</strong></td>
+                          <td>{a.status}</td>
+                          <td>{a.ownerEmployeeId || "—"}</td>
+                          <td style={{textAlign:"right"}}>
+                            {a.status !== "closed" && access?.canEdit && <button className="text-button" onClick={() => closeAction(a.id)}>Close</button>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {access?.canEdit && (
+                  <div className="overlay-form border-t pt-4">
+                    <label><span>Add Action</span>
+                      <div className="flex mt-1" style={{display:"flex", gap:"8px"}}>
+                        <input id="new-action-what" placeholder="What needs to be done?" style={{flex: 1}} />
+                        <button className="secondary" onClick={() => {
+                          const what = document.getElementById("new-action-what").value;
+                          if (what) postAction({ what, priority: "medium" }).then(() => { document.getElementById("new-action-what").value = ""; });
+                        }}>Add</button>
+                      </div>
+                    </label>
+                  </div>
+                )}
+              </Blueprint>
+            </div>
+          </div>
+        )}
+
+        {tab === "my_projects" && (
+          <MyProjectsTab portfolio={portfolio} projectsData={projectsData} access={access} openCard={openCard} />
+        )}
+
+        {tab === "plan_vs_actual" && (
+          <PlanVsActualTab portfolio={portfolio} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MyProjectsTab({ portfolio, projectsData, access, openCard }) {
+  const pms = [...new Set(portfolio.map(p => p.pm).filter(Boolean))].sort();
+  const [pm, setPm] = useState(pms[0] || "");
+  const filtered = portfolio.filter(p => p.pm === pm);
+  
+  return (
+    <div className="content">
+      <Blueprint>
+        <div className="filters mb-0">
+          <select value={pm} onChange={e => setPm(e.target.value)}>
+            {pms.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
+      </Blueprint>
+      
+      {filtered.map(p => {
+        return (
+          <Blueprint key={p.id} className="mb-4">
+            <div className="project-title pt-0 border-t-0 pb-0 mb-4 flex" style={{display: "flex", justifyContent:"space-between"}}>
+              <div>
+                <span className="overline muted">{p.number} · {p.client}</span>
+                <h2 style={{margin: "4px 0"}}>{p.name}</h2>
+              </div>
+              <div style={{display:"flex", gap:"10px", alignItems:"center"}}>
+                <span className={`badge ${p.severity}`}>{p.severity} health</span>
+                <button className="secondary" onClick={() => openCard(p.id)}>View Details</button>
+              </div>
+            </div>
+            <div className="metric-grid compact mb-4">
+              <Metric label="Budget burn" value={p.metrics?.budgetHours == null ? "UNKNOWN" : `${metricValue((p.metrics.budgetBurn || 0) * 100)}%`} />
+              <Metric label="Complete vs burn" value={`${metricValue(p.percentComplete)}% / ${p.metrics?.budgetBurn == null ? "UNKNOWN" : `${metricValue(p.metrics.budgetBurn * 100)}%`}`} />
+              <Metric label="Fee remaining" value={metricValue(p.metrics?.feeRemaining || 0, money)} />
+              <Metric label="AR / oldest" value={`${metricValue(p.metrics?.arTotal || 0, money)} / ${p.metrics?.oldestPastDueDays ?? 0}d`} />
+              <Metric label="WIP / age" value={`${metricValue(p.metrics?.wipEstimate || 0, money)} / ${p.metrics?.wipAgeDays ?? 0}d`} />
+              <Metric label="Last time / contact" value={`${p.metrics?.daysSinceLastTime ?? "Never"}d / ${p.metrics?.daysSinceLastContact ?? "Never"}d`} />
+            </div>
+            <p className="muted"><b>Rule:</b> {p.triggeredRules?.[0]?.name || "Green otherwise"}</p>
+            <p><b>Risk:</b> {p.riskLine || "—"} &nbsp; <b>Action:</b> {p.actionLine || "—"}</p>
+            {access?.canEdit && <PMNoteEditor projectId={p.id} initial={{ riskLine: p.riskLine, actionLine: p.actionLine, percentComplete: p.percentComplete }} />}
+          </Blueprint>
+        );
+      })}
+      {filtered.length === 0 && (
+        <Blueprint className="empty-state placeholder-panel pt-6 pb-6">
+           <div className="placeholder-icon"><UsersIcon /></div>
+           <h2>No projects found</h2>
+           <p className="muted">No projects assigned to this PM.</p>
+        </Blueprint>
+      )}
+    </div>
+  );
+}
+
+function PMNoteEditor({ projectId, initial = {} }) {
+  const [note, setNote] = useState({
+    riskLine: initial.riskLine || "",
+    actionLine: initial.actionLine || "",
+    percentComplete: initial.percentComplete ?? "",
+  });
+  const [status, setStatus] = useState("");
+  const save = async () => {
+    setStatus("Saving...");
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/notes`, {
+        method: "POST", headers: {"Content-Type":"application/json"}, credentials: "include",
+        body: JSON.stringify(note)
+      });
+      if (!res.ok) throw new Error("Save failed");
+      setStatus("Saved.");
+    } catch(err) { setStatus(err.message); }
+  };
+  return (
+    <div className="overlay-form pt-4 border-t">
+      <label><span>Risk, action, percent complete</span>
+        <div className="flex mt-1" style={{display:"flex", gap:"8px"}}>
+          <input value={note.riskLine} onChange={e=>setNote({...note, riskLine: e.target.value})} placeholder="Risk line" style={{flex:1}} />
+          <input value={note.actionLine} onChange={e=>setNote({...note, actionLine: e.target.value})} placeholder="Action line" style={{flex:1}} />
+          <input type="number" min="0" max="100" value={note.percentComplete} onChange={e=>setNote({...note, percentComplete: e.target.value})} placeholder="%" style={{width:"72px"}} />
+          <button className="secondary" onClick={save}>Save</button>
+        </div>
+        {status && <small className="muted mt-2" style={{display: "block"}}>{status}</small>}
+      </label>
+    </div>
+  );
+}
+
+function PlanVsActualTab({ portfolio }) {
+  const [projectId, setProjectId] = useState("");
+  const [plan, setPlan] = useState(null);
+  
+  useEffect(() => {
+    if (projectId) {
+      fetch(`/api/manager/plan-vs-actual/${encodeURIComponent(projectId)}`, { credentials: "include" })
+        .then(res => res.json())
+        .then(data => setPlan(data))
+        .catch(err => console.error(err));
+    } else {
+      setPlan(null);
+    }
+  }, [projectId]);
+
+  return (
+    <div className="content">
+      <Blueprint>
+        <div className="filters mb-0">
+          <select value={projectId} onChange={e => setProjectId(e.target.value)}>
+            <option value="">Select a project...</option>
+            {portfolio.map(p => <option key={p.id} value={p.id}>{p.number} - {p.name}</option>)}
+          </select>
+        </div>
+      </Blueprint>
+
+      {plan && (
+        <Blueprint>
+          <div className="section-heading">
+            <h3>{plan.project?.name} - Plan vs Actual</h3>
+          </div>
+          {!plan.hasBudget && <div className="notice warning mb-4" style={{border: "1px solid #d9aa3e", color:"#916816", background:"#fff0c7", textAlign:"left"}}>No plan loaded. Load a budget to enable comparison.</div>}
+          
+          <div className="table-wrap border-t pt-4">
+            <table>
+              <thead><tr><th>Phase / activity</th><th>Planned</th><th>Actual</th><th>Variance</th><th>Variance %</th></tr></thead>
+              <tbody>
+                {(plan.phases || []).flatMap(phase => [
+                  <tr key={`phase-${phase.id}`}><td><b>{phase.code} — {phase.name}</b></td><td>{phase.planned == null ? "UNKNOWN" : metricValue(phase.planned)}</td><td>{metricValue(phase.actual)}</td><td>{phase.variance == null ? "—" : metricValue(phase.variance)}</td><td>{phase.variancePercent == null ? "—" : `${metricValue(phase.variancePercent * 100)}%`}</td></tr>,
+                  ...(phase.activities || []).map(activity => <tr key={`${phase.id}-${activity.code}`}><td>&nbsp;&nbsp;{activity.code} — {activity.name}</td><td>{activity.planned == null ? "UNKNOWN" : metricValue(activity.planned)}</td><td>{metricValue(activity.actual)}</td><td>{activity.variance == null ? "—" : metricValue(activity.variance)}</td><td>{activity.variancePercent == null ? "—" : `${metricValue(activity.variancePercent * 100)}%`}</td></tr>)
+                ])}
+                {!(plan.phases?.length) && <tr><td colSpan="5" className="muted text-center">No actuals recorded.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </Blueprint>
+      )}
+    </div>
+  );
+}
+
 
 function MappingRow({ row, fingerprints, onSave, disabled }) {
   const [key, setKey] = useState(row.fingerprintKey || "");
@@ -1018,6 +1556,10 @@ function DashboardApp() {
   const [data, setData] = useState(null);
   const [access, setAccess] = useState(null);
   const [page, setPage] = useState(() => pageFromPath(window.location.pathname));
+  const [subParam, setSubParam] = useState(() => {
+    const parts = window.location.pathname.slice(basePath.length).replace(/^\/+|\/+$/g, "").split("/");
+    return parts[1] || "";
+  });
   const [view, setView] = useState("exec");
   const [query, setQuery] = useState("");
   const [pmFilter, setPmFilter] = useState("All PMs");
@@ -1048,33 +1590,38 @@ function DashboardApp() {
 
   useEffect(() => { loadDashboard(); }, []);
   useEffect(() => {
-    const handlePopState = () => setPage(pageFromPath(window.location.pathname));
+    const handlePopState = () => {
+      setPage(pageFromPath(window.location.pathname));
+      const parts = window.location.pathname.slice(basePath.length).replace(/^\/+|\/+$/g, "").split("/");
+      setSubParam(parts[1] || "");
+    };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
   useEffect(() => {
     document.title = `${page === "home" ? "Home" : page === "manager" ? "Manager Dashboard" : page[0].toUpperCase() + page.slice(1)} · CDI Operations Hub`;
     if (access && page === "admin" && !access.isAdmin) {
       window.history.replaceState({}, "", pathForPage("home"));
       setPage("home");
+      setSubParam("");
     }
   }, [access, page]);
 
-  const navigate = (nextPage) => {
+  const navigate = (nextPage, nextSub = "") => {
     if (!hubPages.has(nextPage)) return;
-    const nextPath = pathForPage(nextPage);
+    const nextPath = pathForPage(nextPage) + (nextSub ? `/${nextSub}` : "");
     if (window.location.pathname !== nextPath) window.history.pushState({}, "", nextPath);
     setPage(nextPage);
+    setSubParam(nextSub);
     document.querySelector(".hub-main")?.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const userName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.primaryEmailAddress?.emailAddress || "Approved user";
 
   const openCard = (code) => {
-    setSelectedCode(code);
-    navigate("reports");
-    setView("card");
-    document.querySelector('.hub-main')?.scrollTo({ top: 0, behavior: "smooth" });
+    setSelectedCode(code); // keep this for backward compatibility if needed
+    navigate("projects", code);
   };
 
   const updateProject = async (code, update) => {
@@ -1117,10 +1664,11 @@ function DashboardApp() {
             <SheetPage page={page} userName={userName} data={data}>
               {page === 'home' && <HomeView onNavigate={navigate} isAdmin={access?.isAdmin} userName={userName} />}
               {page === 'reports' && <ReportsView data={data} access={access} view={view} setView={setView} query={query} setQuery={setQuery} pmFilter={pmFilter} setPmFilter={setPmFilter} priority={priority} setPriority={setPriority} selectedCode={selectedCode} setSelectedCode={setSelectedCode} updateProject={updateProject} openCard={openCard} />}
-              {page === 'projects' && <ProjectsView projects={data.projects} onOpen={openCard} />}
+              {page === 'projects' && !subParam && <ProjectsView onOpen={openCard} />}
+              {page === 'projects' && subParam && <ProjectDetailView code={subParam} onBack={() => navigate("projects")} onSave={updateProject} access={access} />}
               {page === 'estimating' && <EstimatingView onNavigate={navigate} />}
               {page === 'pipeline' && <PipelineView onNavigate={navigate} />}
-              {page === 'manager' && <ManagerView />}
+              {page === 'manager' && <ManagerView projectsData={data.projects} openCard={openCard} access={access} />}
               {page === 'admin' && access?.isAdmin && <AdminView dashboard={data} currentUserId={access.userId} onDashboardReload={loadDashboard} />}
             </SheetPage>
           )}
