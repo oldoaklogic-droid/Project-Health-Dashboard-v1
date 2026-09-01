@@ -8,8 +8,12 @@ function Blueprint({ children, className = "" }) {
   return <section className={`blueprint ${className}`}>{children}</section>;
 }
 
-export function PipelineView({ onNavigate }) {
-  const [view, setView] = useState("leads");
+export function PipelineView({ onNavigate, routeIntakeId = "" }) {
+  const [view, setView] = useState(routeIntakeId ? "intake" : "leads");
+
+  useEffect(() => {
+    if (routeIntakeId) setView("intake");
+  }, [routeIntakeId]);
   
   return (
     <div className="content fade-in" data-testid="pipeline-view">
