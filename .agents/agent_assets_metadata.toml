@@ -70,3 +70,59 @@ mtime_ms = 1788356347158
 storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:ef6decb8-d7da-4a88-b7d8-4fbfebca39f0/ae1b37b7-0405-4226-9663-cf5b79193bbf/4aaf30b1-8410-4d93-9fa1-1c7dcf1513ba"
 storage_version_token = "1788356371638900"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "BumwxF6gNvSL2Q5UR25_s"
+uri = "file://artifacts/api-server/data/test-records-export.json"
+type = "unspecified"
+title = "BQE TEST records — Phase 1 export"
+description = "Complete read-only export with full project, budget, invoice, payment, allocation, time-entry, and assignment models plus the exact deletion manifest."
+logical_id = "1037e5d8-c340-4e0e-982b-0e2df6b20146"
+content_hash = "sha256:8f1b27b3489f50331520385cbfc2157b253d1e79856fa5ad11e9b71b2ce66c23"
+size = 63939
+mtime_ms = 1788365052836
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:ef6decb8-d7da-4a88-b7d8-4fbfebca39f0/1037e5d8-c340-4e0e-982b-0e2df6b20146/fca2a860-7ca3-4cd6-9397-121a61dd08b7"
+storage_version_token = "1788365078462921"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "5zjxFRr9pwzGLXkgZmyRI"
+uri = "file://artifacts/api-server/data/test-records-export.json.sha256"
+type = "unspecified"
+title = "BQE TEST records export — SHA-256"
+description = "Checksum sidecar for validating test-records-export.json."
+logical_id = "34141fcd-d0e3-4e6c-a024-d175c34380a2"
+content_hash = "sha256:bef290b0f8a2c1c96975cad3ec538e52db8958a70a9624832eaa69fdb3f0491a"
+size = 91
+mtime_ms = 1788365052837
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:ef6decb8-d7da-4a88-b7d8-4fbfebca39f0/34141fcd-d0e3-4e6c-a024-d175c34380a2/4b9af627-f0af-4fef-a0a0-594165197818"
+storage_version_token = "1788365079168214"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "BqH4TsD_x8VD2NlaAoZ6V"
+uri = "file://data/test-records-export.json"
+type = "unspecified"
+title = "Targeted BQE TEST export"
+description = "GET-only export for TEST-001 through TEST-010, the specified budget, matching custom budgets, and related records."
+logical_id = "859670a3-09b8-4416-b915-c7d73b71a942"
+content_hash = "sha256:dcf81da1155c6e536d6ac4120eed5b7ae7db28e3d692e74353d7a435b17a9cb5"
+size = 24918
+mtime_ms = 1788365170093
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:ef6decb8-d7da-4a88-b7d8-4fbfebca39f0/859670a3-09b8-4416-b915-c7d73b71a942/99109139-266e-419a-8ce1-246ee8f90ab8"
+storage_version_token = "1788365186205427"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "DV4SmFu2J6qQKXsCQJP6M"
+uri = "file://data/test-records-export.json.sha256"
+type = "unspecified"
+title = "Targeted BQE TEST export checksum"
+description = "Verified SHA-256 checksum for data/test-records-export.json."
+logical_id = "a62ce6c2-509b-4263-bd10-d2cfdda5cd82"
+content_hash = "sha256:df6c03d0da812ccc68f8f09aef464905bc71b692e3594253ba210b5bb8e90fb6"
+size = 91
+mtime_ms = 1788365170093
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:ef6decb8-d7da-4a88-b7d8-4fbfebca39f0/a62ce6c2-509b-4263-bd10-d2cfdda5cd82/e2a2df2f-c89f-461d-8162-989ce9902ccf"
+storage_version_token = "1788365186809785"
+content_type = "application/octet-stream"

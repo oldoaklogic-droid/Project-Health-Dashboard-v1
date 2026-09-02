@@ -4,3 +4,4 @@
 - [Orval Zod generation](orval-zod-generation.md) — keep runtime validators separate from generated model types; UUID formats break this workspace's Zod version.
 - [BQE estimator activity gaps](bqe-estimator-activity-gaps.md) — canonical survey codes are missing from live BQE; dry runs warn, and live creation must remain strict.
 - [Manager reconciliation basis](manager-reconciliation-basis.md) — M-100 uses the 133-root checkpoint roster for portfolio counts/AR while project detail uses current BQE rollups.
+- [BQE exhaustive-read constraints](bqe-exhaustive-read-constraints.md) — collection paging is one-based and rate-limited; payment project filtering requires a client-side fallback.
