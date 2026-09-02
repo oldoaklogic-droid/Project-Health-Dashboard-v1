@@ -606,6 +606,12 @@ function ManagerView({ projectsData, openCard, access }) {
             {scoreboard.arDataAsOf && (
               <p className="muted mb-3">AR data as of {new Date(scoreboard.arDataAsOf).toLocaleString()}</p>
             )}
+            {portfolioResponse?.snapshot && (
+              <p className="muted mb-3">
+                Snapshot: {portfolioResponse.snapshot.label} ({new Date(portfolioResponse.snapshot.capturedAt).toLocaleString()})
+                {portfolioResponse.vsAug30 && <> · vs {portfolioResponse.vsAug30.label}: {portfolioResponse.vsAug30.activeExternalRootCountDelta >= 0 ? "+" : ""}{portfolioResponse.vsAug30.activeExternalRootCountDelta} active roots; {portfolioResponse.vsAug30.arTotalDelta >= 0 ? "+" : ""}{metricValue(portfolioResponse.vsAug30.arTotalDelta, money)} AR</>}
+              </p>
+            )}
 
             <Blueprint className="mb-4 pt-0 pb-0" style={{padding:0}}>
               <div className="section-heading" style={{padding: "20px 20px 0"}}>

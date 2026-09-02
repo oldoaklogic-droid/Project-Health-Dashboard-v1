@@ -1,16 +1,16 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import {
-  bqeBudgetsTable,
-  bqeInvoicesTable,
-  bqeProjectsTable,
-  bqeReconciliationTable,
-  bqeTimeEntriesTable,
+  bqeBudgetsSnapTable,
+  bqeInvoicesSnapTable,
+  bqeProjectsSnapTable,
+  bqeSnapshotsTable,
+  bqeTimeEntriesSnapTable,
   clientContactLogTable,
   db,
   healthRulesTable,
+  internalClientsTable,
   pmNotesTable,
   projectHealthSnapshotTable,
-  projectsTable,
   type HealthRule,
 } from "@workspace/db";
 import { logger } from "./logger";
@@ -88,7 +88,25 @@ export function isValidHealthCondition(value: unknown): value is Record<string, 
 }
 
 export function isBqeProjectActive(status: string | null | undefined): boolean {
-  return status == null || status === "0" || status.toLowerCase() === "active";
+  return status === "0";
+}
+
+type SnapshotProject = typeof bqeProjectsSnapTable.$inferSelect;
+
+/** The sole definition used for every portfolio count and AR calculation. */
+export function activeExternalRoots(
+  projects: SnapshotProject[],
+  internalClients: Iterable<string>,
+): SnapshotProject[] {
+  const internal = new Set([...internalClients].map((client) => client.trim().toLowerCase()));
+  return projects.filter((project) =>
+    project.status === "0" &&
+    !project.parentId &&
+    !project.rootProjectId &&
+    Boolean(project.code) &&
+    !project.code!.trim().toUpperCase().startsWith("TEST") &&
+    !internal.has(project.client?.trim().toLowerCase() ?? ""),
+  );
 }
 
 export type PortfolioProject = {
@@ -123,7 +141,6 @@ export type PortfolioArSnapshot = {
   activeExternalRootCount: number;
 };
 
-const OBSOLETE_SEED_CODES = new Set(["26-1509", "26-1510", "26-1511"]);
 const RULE_TYPES_WITHOUT_PROGRESS = new Set([
   "unbilled_age",
   "invoice_past_due",
@@ -146,6 +163,13 @@ function daysBetween(asOf: string, date: string | null | undefined): number | nu
   const then = new Date(`${date.slice(0, 10)}T00:00:00Z`).getTime();
   const now = new Date(`${asOf}T00:00:00Z`).getTime();
   return Number.isFinite(then) ? Math.max(0, Math.floor((now - then) / MS_PER_DAY)) : null;
+}
+
+/** Snapshot labels are the business checkpoint; captured_at is the safe fallback. */
+export function snapshotAsOf(label: string, capturedAt: Date): string {
+  if (/aug(?:ust)?\s*30\b/i.test(label)) return "2026-08-30";
+  if (/sep(?:tember)?\s*1\b/i.test(label)) return "2026-09-01";
+  return capturedAt.toISOString().slice(0, 10);
 }
 
 function inRange(value: number | null, condition: Record<string, unknown>): boolean {
@@ -269,7 +293,7 @@ function itemCode(item: Record<string, unknown>): string {
   return raw.split(":")[0]?.trim() || "Unspecified";
 }
 
-function invoiceDueDate(invoice: typeof bqeInvoicesTable.$inferSelect): string | null {
+function invoiceDueDate(invoice: typeof bqeInvoicesSnapTable.$inferSelect): string | null {
   if (!invoice.invoiceDate) return null;
   const raw = invoice.rawJson as Record<string, unknown> | null;
   const details = asArray(raw?.invoiceDetails);
@@ -283,6 +307,9 @@ function invoiceDueDate(invoice: typeof bqeInvoicesTable.$inferSelect): string |
 type LoadedData = {
   asOf: string;
   portfolioAr: PortfolioArSnapshot;
+  snapshot: { id: string; label: string; capturedAt: string };
+  comparison: { label: string; capturedAt: string; activeExternalRootCountDelta: number; arTotalDelta: number; arOver60Delta: number } | null;
+  excludedInternalClients: Array<{ client: string; projectCount: number }>;
   projects: PortfolioProject[];
   phaseByProject: Map<string, Array<{
     id: string;
@@ -304,26 +331,17 @@ type LoadedData = {
 
 let portfolioCache: { expires: number; promise: Promise<LoadedData> } | null = null;
 
-function isExternalProject(client: string | null | undefined): boolean {
-  const normalized = client?.trim().toLowerCase() ?? "";
-  return normalized !== "" && normalized !== "complete design, inc.";
-}
-
-function calculatePortfolioAr(
+export function calculatePortfolioAr(
   asOf: string,
   completedAt: Date | null,
-  projects: typeof bqeProjectsTable.$inferSelect[],
-  invoices: typeof bqeInvoicesTable.$inferSelect[],
+  projects: SnapshotProject[],
+  invoices: typeof bqeInvoicesSnapTable.$inferSelect[],
+  internalClients: Iterable<string>,
 ): PortfolioArSnapshot {
   const projectById = new Map(projects.map((project) => [project.recordId, project]));
   const projectByCode = new Map(projects.flatMap((project) =>
     project.code ? [[project.code, project] as const] : []));
-  const eligibleRootIds = new Set(projects.filter((project) =>
-    !project.parentId &&
-    !project.rootProjectId &&
-    isBqeProjectActive(project.status) &&
-    isExternalProject(project.client)
-  ).map((project) => project.recordId));
+  const eligibleRootIds = new Set(activeExternalRoots(projects, internalClients).map((project) => project.recordId));
 
   let total = 0;
   let over60 = 0;
@@ -351,31 +369,39 @@ function calculatePortfolioAr(
 async function loadPortfolioData(force = false): Promise<LoadedData> {
   if (!force && portfolioCache && portfolioCache.expires > Date.now()) return portfolioCache.promise;
   const promise = (async (): Promise<LoadedData> => {
-    const [roster, bqeProjects, time, budgets, invoices, notes, contacts, rules, reconciliations, snapshots] =
+    const [allSnapshots, internalClients, notes, contacts, rules, snapshots] =
       await Promise.all([
-        db.select().from(projectsTable),
-        db.select().from(bqeProjectsTable),
-        db.select().from(bqeTimeEntriesTable),
-        db.select().from(bqeBudgetsTable),
-        db.select().from(bqeInvoicesTable),
+        db.select().from(bqeSnapshotsTable).orderBy(desc(bqeSnapshotsTable.capturedAt)),
+        db.select().from(internalClientsTable).where(eq(internalClientsTable.active, true)),
         db.select().from(pmNotesTable).orderBy(desc(pmNotesTable.asOf)),
         db.select().from(clientContactLogTable).orderBy(desc(clientContactLogTable.contactDate)),
         db.select().from(healthRulesTable).orderBy(healthRulesTable.sortOrder),
-        db.select({
-          asOfDate: bqeReconciliationTable.asOfDate,
-          completedAt: bqeReconciliationTable.completedAt,
-        }).from(bqeReconciliationTable)
-          .orderBy(desc(bqeReconciliationTable.completedAt)).limit(1),
         db.select().from(projectHealthSnapshotTable),
       ]);
-    const asOf = reconciliations[0]?.asOfDate ?? new Date().toISOString().slice(0, 10);
+    const selectedSnapshot = allSnapshots.find((snapshot) => /sep(?:tember)?\s*1\b/i.test(snapshot.label))
+      ?? allSnapshots[0];
+    if (!selectedSnapshot) throw new Error("No BQE snapshot is available for project health.");
+    const comparisonSnapshot = allSnapshots.find((snapshot) => /aug(?:ust)?\s*30\b/i.test(snapshot.label)) ?? null;
+    const [bqeProjects, time, budgets, invoices, comparisonProjects, comparisonInvoices] = await Promise.all([
+      db.select().from(bqeProjectsSnapTable).where(eq(bqeProjectsSnapTable.snapshotId, selectedSnapshot.id)),
+      db.select().from(bqeTimeEntriesSnapTable).where(eq(bqeTimeEntriesSnapTable.snapshotId, selectedSnapshot.id)),
+      db.select().from(bqeBudgetsSnapTable).where(eq(bqeBudgetsSnapTable.snapshotId, selectedSnapshot.id)),
+      db.select().from(bqeInvoicesSnapTable).where(eq(bqeInvoicesSnapTable.snapshotId, selectedSnapshot.id)),
+      comparisonSnapshot ? db.select().from(bqeProjectsSnapTable).where(eq(bqeProjectsSnapTable.snapshotId, comparisonSnapshot.id)) : Promise.resolve([]),
+      comparisonSnapshot ? db.select().from(bqeInvoicesSnapTable).where(eq(bqeInvoicesSnapTable.snapshotId, comparisonSnapshot.id)) : Promise.resolve([]),
+    ]);
+    const asOf = snapshotAsOf(selectedSnapshot.label, selectedSnapshot.capturedAt);
+    const internalClientNames = internalClients.map((row) => row.client);
     const portfolioAr = calculatePortfolioAr(
       asOf,
-      reconciliations[0]?.completedAt ?? null,
+      selectedSnapshot.capturedAt,
       bqeProjects,
       invoices,
+      internalClientNames,
     );
-    const bqeByCode = new Map(bqeProjects.filter((row) => row.code).map((row) => [row.code!, row]));
+    const comparisonAr = comparisonSnapshot
+      ? calculatePortfolioAr(snapshotAsOf(comparisonSnapshot.label, comparisonSnapshot.capturedAt), comparisonSnapshot.capturedAt, comparisonProjects, comparisonInvoices, internalClientNames)
+      : null;
     const childrenByRoot = new Map<string, typeof bqeProjects>();
     for (const project of bqeProjects) {
       const rootId = project.rootProjectId || project.parentId || project.recordId;
@@ -396,10 +422,9 @@ async function loadPortfolioData(force = false): Promise<LoadedData> {
     const detailByProject = new Map<string, LoadedData["detailByProject"] extends Map<string, infer T> ? T : never>();
 
     const output: PortfolioProject[] = [];
-    for (const overlay of roster.filter((row) => !OBSOLETE_SEED_CODES.has(row.code))) {
-      const bqeRoot = bqeByCode.get(overlay.code);
-      const id = bqeRoot?.recordId ?? overlay.code;
-      const members = bqeRoot ? (childrenByRoot.get(bqeRoot.recordId) ?? [bqeRoot]) : [];
+    for (const bqeRoot of activeExternalRoots(bqeProjects, internalClientNames)) {
+      const id = bqeRoot.recordId;
+      const members = childrenByRoot.get(bqeRoot.recordId) ?? [bqeRoot];
       const memberIds = new Set(members.map((row) => row.recordId));
       const memberCodes = new Set(members.flatMap((row) => row.code ? [row.code] : []));
       const belongs = (projectId: string | null, projectCode: string | null) =>
@@ -416,7 +441,7 @@ async function loadPortfolioData(force = false): Promise<LoadedData> {
       const actualHours = rootTime.reduce((sum, row) => sum + numberValue(row.hours), 0);
       const budgetHoursValue = rootBudgets.reduce((sum, row) => sum + numberValue(row.totalHours), 0);
       const budgetHours = rootBudgets.length && budgetHoursValue > 0 ? budgetHoursValue : null;
-      const contractAmount = numberValue(bqeRoot?.contractAmount) || numberValue(overlay.contractValue);
+      const contractAmount = numberValue(bqeRoot.contractAmount);
       const invoicedAmount = rootInvoices.reduce((sum, row) => sum + numberValue(row.amount), 0);
       const note = latestNote.get(id);
       const contact = latestContact.get(id);
@@ -459,10 +484,9 @@ async function loadPortfolioData(force = false): Promise<LoadedData> {
       }, null);
       const arOver60 = openInvoices.reduce((sum, invoice) =>
         (daysBetween(asOf, invoiceDueDate(invoice)) ?? 0) > 60 ? sum + numberValue(invoice.balance) : sum, 0);
-      const percentComplete = latestPercentComplete.get(id) ??
-        (overlay.pctAvail ? numberValue(overlay.pctComplete) : null);
+      const percentComplete = latestPercentComplete.get(id) ?? null;
       const reconciledAr = openInvoices.reduce((sum, row) => sum + numberValue(row.balance), 0);
-      const arTotal = numberValue(overlay.openAr) > 0 ? numberValue(overlay.openAr) : reconciledAr;
+      const arTotal = reconciledAr;
       const metrics: HealthMetrics = {
         contractAmount,
         actualHours,
@@ -485,19 +509,19 @@ async function loadPortfolioData(force = false): Promise<LoadedData> {
       };
       const evaluation = evaluateHealth({
         ...metrics,
-        active: isBqeProjectActive(bqeRoot?.status),
+        active: isBqeProjectActive(bqeRoot.status),
       }, rules);
       const snapshot = snapshotByProject.get(id);
       const triggeredRules = evaluation.results.filter((result) => result.result === "triggered");
       const unknownRules = evaluation.results.filter((result) => result.result === "unknown");
       output.push({
         id,
-        number: overlay.code,
-        name: bqeRoot?.name || overlay.name,
-        client: bqeRoot?.client || overlay.client,
-        pm: bqeRoot?.manager || overlay.pm,
+        number: bqeRoot.code ?? bqeRoot.recordId,
+        name: bqeRoot.name ?? bqeRoot.code ?? bqeRoot.recordId,
+        client: bqeRoot.client ?? "",
+        pm: bqeRoot.manager ?? "",
         fee: contractAmount,
-        portfolioAr: numberValue(overlay.openAr),
+        portfolioAr: arTotal,
         computedSeverity: evaluation.severity,
         severity: (snapshot?.overrideSeverity as HealthSeverity | null) ?? evaluation.severity,
         triggeredRules,
@@ -537,7 +561,6 @@ async function loadPortfolioData(force = false): Promise<LoadedData> {
         };
       }).sort((a, b) => (b.variancePercent ?? -Infinity) - (a.variancePercent ?? -Infinity));
       phaseByProject.set(id, phases);
-      phaseByProject.set(overlay.code, phases);
       detailByProject.set(id, {
         timeEntries: rootTime.filter((row) => (daysBetween(asOf, row.entryDate) ?? Infinity) <= 28)
           .sort((a, b) => String(b.entryDate).localeCompare(String(a.entryDate))),
@@ -553,9 +576,23 @@ async function loadPortfolioData(force = false): Promise<LoadedData> {
         contacts: contacts.filter((row) => row.projectId === id),
         pmNote: note ?? null,
       });
-      detailByProject.set(overlay.code, detailByProject.get(id)!);
     }
-    return { asOf, portfolioAr, projects: output, phaseByProject, detailByProject };
+    const internalSet = new Set(internalClientNames.map((client) => client.trim().toLowerCase()));
+    const excludedInternalClients = [...internalSet].map((normalized) => ({
+      client: internalClients.find((row) => row.client.trim().toLowerCase() === normalized)?.client ?? normalized,
+      projectCount: bqeProjects.filter((project) => project.status === "0" && !project.parentId && !project.rootProjectId &&
+        project.client?.trim().toLowerCase() === normalized).length,
+    }));
+    return {
+      asOf, portfolioAr, projects: output, phaseByProject, detailByProject, excludedInternalClients,
+      snapshot: { id: selectedSnapshot.id, label: selectedSnapshot.label, capturedAt: selectedSnapshot.capturedAt.toISOString() },
+      comparison: comparisonSnapshot && comparisonAr ? {
+        label: comparisonSnapshot.label, capturedAt: comparisonSnapshot.capturedAt.toISOString(),
+        activeExternalRootCountDelta: portfolioAr.activeExternalRootCount - comparisonAr.activeExternalRootCount,
+        arTotalDelta: portfolioAr.total - comparisonAr.total,
+        arOver60Delta: portfolioAr.over60 - comparisonAr.over60,
+      } : null,
+    };
   })();
   portfolioCache = { expires: Date.now() + 60_000, promise };
   return promise;

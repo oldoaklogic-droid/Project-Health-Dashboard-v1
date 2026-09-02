@@ -8,6 +8,7 @@ import {
   pgTable,
   primaryKey,
   text,
+  timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
@@ -19,6 +20,13 @@ export const healthRulesTable = pgTable("health_rules", {
   condition: jsonb("condition").$type<Record<string, unknown>>().notNull(),
   active: boolean("active").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
+});
+
+/** Exact BQE client names that are excluded from the external portfolio. */
+export const internalClientsTable = pgTable("internal_clients", {
+  client: text("client").primaryKey(),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const projectHealthSnapshotTable = pgTable("project_health_snapshot", {

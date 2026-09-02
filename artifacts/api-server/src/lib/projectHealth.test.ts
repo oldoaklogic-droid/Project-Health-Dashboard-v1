@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  activeExternalRoots,
+  calculatePortfolioAr,
+  snapshotAsOf,
   evaluateHealth,
   isBqeProjectActive,
   isValidHealthCondition,
@@ -140,10 +143,48 @@ test("missing Stage 1 history is explicit unknown and active-only rules ignore i
 
 test("BQE status and editable rule conditions are validated", () => {
   assert.equal(isBqeProjectActive("0"), true);
-  assert.equal(isBqeProjectActive("Active"), true);
+  assert.equal(isBqeProjectActive("Active"), false);
   assert.equal(isBqeProjectActive("2"), false);
   assert.equal(isValidHealthCondition({ type: "time_entry_age", minExclusive: 30, activeOnly: true }), true);
   assert.equal(isValidHealthCondition({ type: "unsupported", minExclusive: 30 }), false);
   assert.equal(isValidHealthCondition({ type: "budget_burn", minExclusive: "80" }), false);
   assert.equal(isValidHealthCondition({ type: "fee_remaining" }), false);
+});
+
+test("active external roots require exact BQE status, root shape, and non-internal non-test client", () => {
+  const projects = [
+    { recordId: "one", code: "26-1", status: "0", parentId: null, rootProjectId: null, client: "External" },
+    { recordId: "two", code: "TEST-1", status: "0", parentId: null, rootProjectId: null, client: "External" },
+    { recordId: "three", code: "26-3", status: "Active", parentId: null, rootProjectId: null, client: "External" },
+    { recordId: "four", code: "26-4", status: "0", parentId: "one", rootProjectId: "one", client: "External" },
+    { recordId: "five", code: "26-5", status: "0", parentId: null, rootProjectId: null, client: " Complete Design, Inc. " },
+  ] as any[];
+  assert.deepEqual(activeExternalRoots(projects, ["complete design, inc."]).map((project) => project.recordId), ["one"]);
+});
+
+test("snapshot AR rolls child invoices to eligible roots and excludes void, draft, and late fees", () => {
+  const projects = [
+    { recordId: "root", code: "26-1", status: "0", parentId: null, rootProjectId: null, client: "External" },
+    { recordId: "phase", code: "26-1.01", status: "0", parentId: "root", rootProjectId: "root", client: "External" },
+  ] as any[];
+  const invoice = (recordId: string, balance: number, extra = {}) => ({
+    recordId, projectId: "phase", projectCode: "26-1.01", invoiceDate: "2026-06-01",
+    balance: String(balance), rawJson: { invoiceDetails: [{ term: "Net 0" }] }, void: false, draft: false, invoiceType: 1, ...extra,
+  });
+  const ar = calculatePortfolioAr("2026-09-01", new Date("2026-09-01T12:00:00Z"), projects, [
+    invoice("included", 100),
+    invoice("void", 200, { void: true }),
+    invoice("draft", 300, { draft: true }),
+    invoice("fee", 400, { invoiceType: 39 }),
+  ] as any[], []);
+  assert.deepEqual(ar.total, 100);
+  assert.deepEqual(ar.over60, 100);
+  assert.equal(ar.activeExternalRootCount, 1);
+});
+
+test("snapshot labels provide fixed checkpoint dates before captured-date fallback", () => {
+  const captured = new Date("2027-02-03T10:00:00Z");
+  assert.equal(snapshotAsOf("Aug 30 checkpoint", captured), "2026-08-30");
+  assert.equal(snapshotAsOf("Sep 1 snapshot", captured), "2026-09-01");
+  assert.equal(snapshotAsOf("other snapshot", captured), "2027-02-03");
 });

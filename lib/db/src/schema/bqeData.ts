@@ -9,6 +9,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uuid,
 } from "drizzle-orm/pg-core";
 
 const rawRecord = {
@@ -39,6 +40,104 @@ export const bqeProjectsTable = pgTable(
     index("bqe_projects_code_idx").on(table.code),
   ],
 );
+
+/**
+ * A snapshot is an immutable BQE extract.  The operational dashboard reads
+ * these tables rather than the mutable, most-recent BQE staging tables.
+ */
+export const bqeSnapshotsTable = pgTable("bqe_snapshots", {
+  id: uuid("id").primaryKey(),
+  label: text("label").notNull(),
+  pullRunId: text("pull_run_id").notNull(),
+  capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+  rowCounts: jsonb("row_counts").$type<Record<string, number>>().notNull(),
+  checksum: text("checksum").notNull(),
+}, (table) => [index("bqe_snapshots_captured_at_idx").on(table.capturedAt)]);
+
+const snapshotRecord = {
+  snapshotId: uuid("snapshot_id").notNull().references(() => bqeSnapshotsTable.id),
+  recordId: text("record_id").notNull(),
+  pulledAt: timestamp("pulled_at", { withTimezone: true }).notNull(),
+  rawJson: jsonb("raw_json").$type<Record<string, unknown>>().notNull(),
+};
+
+export const bqeProjectsSnapTable = pgTable("bqe_projects_snap", {
+  ...snapshotRecord,
+  code: text("code"),
+  name: text("name"),
+  parentId: text("parent_id"),
+  rootProjectId: text("root_project_id"),
+  projectType: text("project_type"),
+  projectClass: text("project_class"),
+  projectClassId: text("project_class_id"),
+  client: text("client"),
+  status: text("status"),
+  contractType: text("contract_type"),
+  contractAmount: numeric("contract_amount"),
+  manager: text("manager"),
+}, (table) => [index("bqe_projects_snap_code_idx").on(table.snapshotId, table.code)]);
+
+export const bqeTimeEntriesSnapTable = pgTable("bqe_time_entries_snap", {
+  ...snapshotRecord,
+  entryDate: date("entry_date", { mode: "string" }),
+  employee: text("employee"),
+  projectId: text("project_id"),
+  projectCode: text("project_code"),
+  activityId: text("activity_id"),
+  activityCode: text("activity_code"),
+  hours: numeric("hours"),
+  billable: boolean("billable"),
+  billRate: numeric("bill_rate"),
+  costRate: numeric("cost_rate"),
+}, (table) => [index("bqe_time_entries_snap_project_idx").on(table.snapshotId, table.projectId)]);
+
+export const bqeBudgetsSnapTable = pgTable("bqe_budgets_snap", {
+  ...snapshotRecord,
+  name: text("name"),
+  projectId: text("project_id"),
+  projectCode: text("project_code"),
+  lineItems: jsonb("line_items").$type<unknown>(),
+  totalHours: numeric("total_hours"),
+}, (table) => [index("bqe_budgets_snap_project_idx").on(table.snapshotId, table.projectId)]);
+
+export const bqeInvoicesSnapTable = pgTable("bqe_invoices_snap", {
+  ...snapshotRecord,
+  invoiceNumber: text("invoice_number"),
+  projectId: text("project_id"),
+  projectCode: text("project_code"),
+  invoiceDate: date("invoice_date", { mode: "string" }),
+  amount: numeric("amount"),
+  balance: numeric("balance"),
+  invoiceType: integer("invoice_type"),
+  status: integer("status"),
+  draft: boolean("draft"),
+  void: boolean("void"),
+  serviceAmount: numeric("service_amount"),
+  expenseAmount: numeric("expense_amount"),
+  serviceTaxAmount: numeric("service_tax_amount"),
+  expenseTaxAmount: numeric("expense_tax_amount"),
+  discount: numeric("discount"),
+  registerAmount: numeric("register_amount"),
+}, (table) => [index("bqe_invoices_snap_project_idx").on(table.snapshotId, table.projectId)]);
+
+export const bqePaymentsSnapTable = pgTable("bqe_payments_snap", {
+  ...snapshotRecord,
+  paymentDate: date("payment_date", { mode: "string" }),
+  amount: numeric("amount"),
+  projectId: text("project_id"),
+  projectCode: text("project_code"),
+  method: text("method"),
+  reference: text("reference"),
+});
+
+export const bqeActivitiesSnapTable = pgTable("bqe_activities_snap", {
+  ...snapshotRecord,
+  code: text("code"),
+  name: text("name"),
+  active: boolean("active"),
+  billable: boolean("billable"),
+  rates: jsonb("rates").$type<unknown>(),
+});
 
 /** Raw, immutable evidence returned by BQE's read-only customfieldvalue API. */
 export const bqeProjectCustomFieldsTable = pgTable(
