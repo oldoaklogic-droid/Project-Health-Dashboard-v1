@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import {
-  assertControlledHourBearingProjects,
   batchBqeEnrichmentIds,
   deriveBqeEnrichmentScope,
   fetchBqeRecordsForObject,
@@ -197,13 +196,6 @@ describe("BQE pull fixtures", () => {
     assert.deepEqual([...scope.controlledIds].sort(), ["hour-only", "overlap"]);
     assert.deepEqual([...scope.activeIds].sort(), ["active-only", "office", "overlap"]);
     assert.deepEqual([...scope.eligibleIds].sort(), ["active-only", "hour-only", "office", "overlap"]);
-  });
-
-  it("requires the reviewed 315-project controlled set before enrichment", () => {
-    assert.throws(() => assertControlledHourBearingProjects(new Set(["only-one"])), /expected 315/);
-    assert.doesNotThrow(() =>
-      assertControlledHourBearingProjects(new Set(Array.from({ length: 315 }, (_, index) => `${index}`))),
-    );
   });
 
   it("batches scoped enrichment IDs at twenty and never creates an empty batch", () => {

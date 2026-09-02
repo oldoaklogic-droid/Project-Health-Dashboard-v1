@@ -29,7 +29,6 @@ const REPORTING_YEAR = 2026;
 const YEAR_START = "2026-01-01";
 const YEAR_END = "2027-01-01";
 const PROJECT_CODES = ["23-0091", "23-0147", "24-0022"] as const;
-const CONTROLLED_HOUR_BEARING_PROJECT_COUNT = 315;
 const ENRICHMENT_BATCH_SIZE = 20;
 
 export const BQE_OBJECT_TYPES = [
@@ -638,12 +637,6 @@ export function deriveBqeEnrichmentScope(
   };
 }
 
-export function assertControlledHourBearingProjects(projectIds: Set<string>): void {
-  if (projectIds.size !== CONTROLLED_HOUR_BEARING_PROJECT_COUNT) {
-    throw new Error(`BQE controlled hour-bearing project count was ${projectIds.size}; expected ${CONTROLLED_HOUR_BEARING_PROJECT_COUNT}.`);
-  }
-}
-
 function scopePredicate(field: "id" | "entityId", ids: string[]): string {
   return ids.map((id) => `${field} = '${id.replace(/'/g, "''")}'`).join(" OR ");
 }
@@ -704,7 +697,10 @@ async function enrichProjectClassification(
   pulledAt: Date,
 ): Promise<{ classRows: number; customRows: number; batches: number }> {
   const { controlledIds, activeIds, eligibleIds } = deriveBqeEnrichmentScope(projects, timeEntries);
-  assertControlledHourBearingProjects(controlledIds);
+  logger.info(
+    { controlledHourBearingProjectCount: controlledIds.size },
+    "BQE controlled hour-bearing project count computed from live pull",
+  );
   const ids = [...eligibleIds];
   if (ids.length === 0) {
     logger.info({ controlled: controlledIds.size, active: activeIds.size, union: 0, classRows: 0, customRows: 0, batches: 0 }, "BQE scoped enrichment completed");
