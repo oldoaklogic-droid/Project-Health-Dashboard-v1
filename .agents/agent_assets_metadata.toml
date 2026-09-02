@@ -42,3 +42,17 @@ mtime_ms = 1788348465932
 storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:ef6decb8-d7da-4a88-b7d8-4fbfebca39f0/4d1d1a25-2b72-4503-ba12-73f793aabfcf/0f9c44df-c655-4632-a533-f12c7a2c89ef"
 storage_version_token = "1788348483064237"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "IFd6GhAyt1W5J9WfIHh4h"
+uri = "file://artifacts/api-server/logs/bqe-test010-create-link.log"
+type = "unspecified"
+title = "TEST-010 full create-and-link log"
+description = "Complete untruncated request and response log for project creation, budget creation, project link PUT, read-back comparison, and project activities GET."
+logical_id = "8b40bbee-649b-4778-88ec-b8768a77132e"
+content_hash = "sha256:fc521a1c0a4f71b12821430c4bd4716bdc6a3eb960a4ea44db803f774410daa5"
+size = 35960
+mtime_ms = 1788355799826
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:ef6decb8-d7da-4a88-b7d8-4fbfebca39f0/8b40bbee-649b-4778-88ec-b8768a77132e/8060f6f3-9968-44fd-aa05-20b0f9c00eb4"
+storage_version_token = "1788355816986282"
+content_type = "application/octet-stream"
