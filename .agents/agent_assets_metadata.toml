@@ -28,3 +28,17 @@ mtime_ms = 1788145719234
 storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:ef6decb8-d7da-4a88-b7d8-4fbfebca39f0/be8b821e-f4aa-47d9-a447-c830aac49cde/42a36dde-d0c7-4627-a7d2-f2ccc8dd564e"
 storage_version_token = "1788145720400325"
 content_type = "text/csv"
+
+[[outputs]]
+id = "EgzJBm2gQBc2uza0Np5-N"
+uri = "file://artifacts/api-server/logs/bqe-test001-budget-link.log"
+type = "unspecified"
+title = "TEST-001 budget-link execution log"
+description = "Complete controlled-write log. Execution stopped after the initial project GET returned HTTP 204; no PUT was attempted."
+logical_id = "4d1d1a25-2b72-4503-ba12-73f793aabfcf"
+content_hash = "sha256:b94a439ae29bf2fa8e79ae2d62d8ee43b304842493f0d56a6d8a7e0152358e24"
+size = 665
+mtime_ms = 1788348465932
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:ef6decb8-d7da-4a88-b7d8-4fbfebca39f0/4d1d1a25-2b72-4503-ba12-73f793aabfcf/0f9c44df-c655-4632-a533-f12c7a2c89ef"
+storage_version_token = "1788348483064237"
+content_type = "application/octet-stream"
