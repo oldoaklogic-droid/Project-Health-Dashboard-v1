@@ -288,6 +288,7 @@ function ProjectDetailView({ code, onBack, access }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [healthRules, setHealthRules] = useState([]);
+  const [portfolioFilter, setPortfolioFilter] = useState("all");
   
   const [noteForm, setNoteForm] = useState({ riskLine: "", actionLine: "", percentComplete: "" });
   const [contactForm, setContactForm] = useState({ method: "", summary: "" });
@@ -543,6 +544,7 @@ function ManagerView({ projectsData, openCard, access }) {
   const redProjects = portfolioResponse?.red || [];
   const yellowProjects = portfolioResponse?.yellow || [];
   const grayProjects = portfolioResponse?.gray || [];
+  const closeoutProjects = (portfolioResponse?.projects || []).filter(project => project.closeoutCandidate);
   const scoreboard = portfolioResponse?.scoreboard || {};
 
   const getRuleNames = (project) => {
@@ -603,6 +605,10 @@ function ManagerView({ projectsData, openCard, access }) {
               <Metric label="AR total / over 60" value={`${metricValue(scoreboard.arTotal || 0, money)} / ${metricValue(scoreboard.arOver60 || 0, money)}`} />
               <Metric label="Red / Yellow / Gray" value={`${scoreboard.redCount || 0} / ${scoreboard.yellowCount || 0} / ${scoreboard.grayCount || 0}`} accent />
               <Metric label="No contract amount on file" value={scoreboard.noContractAmountOnFileCount || 0} gray />
+              <Metric label="Closeout candidates" value={scoreboard.closeoutCandidateCount || 0} gray />
+            </div>
+            <div className="filters mb-3">
+              <label><span>Portfolio filter</span><select value={portfolioFilter} onChange={(event) => setPortfolioFilter(event.target.value)}><option value="all">All exceptions</option><option value="closeout">Closeout candidates</option></select></label>
             </div>
             {scoreboard.arDataAsOf && (
               <p className="muted mb-3">AR data as of {new Date(scoreboard.arDataAsOf).toLocaleString()}</p>
@@ -614,7 +620,19 @@ function ManagerView({ projectsData, openCard, access }) {
               </p>
             )}
 
-            <Blueprint className="mb-4 pt-0 pb-0" style={{padding:0}}>
+            {portfolioFilter === "closeout" && <Blueprint className="mb-4 pt-0 pb-0" style={{padding:0}}>
+              <div className="section-heading" style={{padding: "20px 20px 0"}}>
+                <h3>Fully billed, no recent activity: closeout candidates</h3>
+              </div>
+              <div className="table-wrap" style={{marginTop:0, borderTop:0}}>
+                <table>
+                  <thead><tr><th>Project</th><th>Name</th><th>Client</th><th>PM</th><th>Fee</th><th>Rule</th><th>Risk</th><th>Action</th><th>PM note</th></tr></thead>
+                  <tbody>{closeoutProjects.map(renderPortfolioRow)}</tbody>
+                </table>
+              </div>
+            </Blueprint>}
+
+            {portfolioFilter === "all" && <Blueprint className="mb-4 pt-0 pb-0" style={{padding:0}}>
               <div className="section-heading" style={{padding: "20px 20px 0"}}>
                 <h3 className="danger" style={{color:"var(--danger)"}}>Needs Attention Now (Red)</h3>
               </div>
@@ -624,9 +642,9 @@ function ManagerView({ projectsData, openCard, access }) {
                   <tbody>{redProjects.map(renderPortfolioRow)}</tbody>
                 </table>
               </div>
-            </Blueprint>
+            </Blueprint>}
 
-            <Blueprint className="mb-4 pt-0 pb-0" style={{padding:0}}>
+            {portfolioFilter === "all" && <Blueprint className="mb-4 pt-0 pb-0" style={{padding:0}}>
               <div className="section-heading" style={{padding: "20px 20px 0"}}>
                 <h3 style={{color: "#d9aa3e"}}>Trending Wrong (Yellow)</h3>
               </div>
@@ -636,9 +654,9 @@ function ManagerView({ projectsData, openCard, access }) {
                   <tbody>{yellowProjects.map(renderPortfolioRow)}</tbody>
                 </table>
               </div>
-            </Blueprint>
+            </Blueprint>}
 
-            <Blueprint className="mb-4 pt-0 pb-0" style={{padding:0}}>
+            {portfolioFilter === "all" && <Blueprint className="mb-4 pt-0 pb-0" style={{padding:0}}>
               <details>
                 <summary className="section-heading" style={{cursor:"pointer", marginBottom:0, padding: "20px 20px 0"}}>
                   <h3 className="muted">Needs a Decision ({grayProjects.length})</h3>
@@ -650,7 +668,7 @@ function ManagerView({ projectsData, openCard, access }) {
                   </table>
                 </div>
               </details>
-            </Blueprint>
+            </Blueprint>}
 
             <div className="two-col">
               <Blueprint>
@@ -760,6 +778,7 @@ function MyProjectsTab({ portfolio, projectsData, access, openCard }) {
               <div style={{display:"flex", gap:"10px", alignItems:"center"}}>
                 <span className={`badge ${p.severity}`}>{p.severity} health</span>
                 {p.noContractAmountOnFile && <span className="badge gray">No contract amount on file</span>}
+                {p.closeoutCandidate && <span className="badge gray">Fully billed, no recent activity: closeout candidate</span>}
                 <button className="secondary" onClick={() => openCard(p.id)}>View Details</button>
               </div>
             </div>

@@ -117,6 +117,7 @@ export type PortfolioProject = {
   pm: string;
   fee: number;
   noContractAmountOnFile: boolean;
+  closeoutCandidate: boolean;
   portfolioAr: number;
   computedSeverity: HealthSeverity;
   severity: HealthSeverity;
@@ -249,7 +250,8 @@ export function evaluateHealth(
       case "fee_exhausted":
         triggered = metrics.contractAmount > 0 &&
           metrics.invoicedAmount >= metrics.contractAmount &&
-          (metrics.percentComplete === null || metrics.percentComplete < 100);
+          ((metrics.daysSinceLastTime !== null && metrics.daysSinceLastTime <= 30) ||
+            (metrics.percentComplete !== null && metrics.percentComplete < 100));
         break;
       case "time_entry_age":
         triggered = metrics.daysSinceLastTime !== null && inRange(metrics.daysSinceLastTime, condition);
@@ -511,6 +513,10 @@ async function loadPortfolioData(force = false): Promise<LoadedData> {
         daysSinceLastContact: daysBetween(asOf, contact?.contactDate),
         activities,
       };
+      const closeoutCandidate = contractAmount > 0 &&
+        invoicedAmount >= contractAmount &&
+        !(metrics.daysSinceLastTime !== null && metrics.daysSinceLastTime <= 30) &&
+        !(percentComplete !== null && percentComplete < 100);
       const evaluation = evaluateHealth({
         ...metrics,
         active: isBqeProjectActive(bqeRoot.status),
@@ -526,6 +532,7 @@ async function loadPortfolioData(force = false): Promise<LoadedData> {
         pm: bqeRoot.manager ?? "",
         fee: contractAmount,
         noContractAmountOnFile: contractAmount <= 0,
+        closeoutCandidate,
         portfolioAr: arTotal,
         computedSeverity: evaluation.severity,
         severity: (snapshot?.overrideSeverity as HealthSeverity | null) ?? evaluation.severity,

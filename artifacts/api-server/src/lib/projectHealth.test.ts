@@ -105,7 +105,27 @@ test("activity, WIP, invoice, note, contact, and fee thresholds preserve severit
   assert.equal(evaluateHealth({ ...base, daysSinceLastPmNote: 14 }, rules).severity, "yellow");
   assert.equal(evaluateHealth({ ...base, daysSinceLastPmNote: 31 }, rules).severity, "red");
   assert.equal(evaluateHealth({ ...base, daysSinceLastContact: 31 }, rules).severity, "red");
-  assert.equal(evaluateHealth({ ...base, invoicedAmount: 20_000, feeRemaining: 0, percentComplete: 99 }, rules).severity, "red");
+  assert.equal(evaluateHealth({
+    ...base,
+    invoicedAmount: 20_000,
+    feeRemaining: 0,
+    percentComplete: 99,
+    daysSinceLastTime: 31,
+  }, rules).severity, "red");
+  assert.equal(evaluateHealth({
+    ...base,
+    invoicedAmount: 20_000,
+    feeRemaining: 0,
+    percentComplete: null,
+    daysSinceLastTime: 30,
+  }, rules).severity, "red");
+  assert.equal(evaluateHealth({
+    ...base,
+    invoicedAmount: 20_000,
+    feeRemaining: 0,
+    percentComplete: null,
+    daysSinceLastTime: 31,
+  }, rules).results.find((result) => result.name === "Fee red")?.result, "clear");
   assert.equal(evaluateHealth({ ...base, feeRemaining: 4_999 }, rules).severity, "yellow");
 });
 
