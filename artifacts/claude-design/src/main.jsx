@@ -602,6 +602,7 @@ function ManagerView({ projectsData, openCard, access }) {
               <Metric label="Unbilled WIP estimate" value={metricValue(scoreboard.unbilledWipEstimate || 0, money)} />
               <Metric label="AR total / over 60" value={`${metricValue(scoreboard.arTotal || 0, money)} / ${metricValue(scoreboard.arOver60 || 0, money)}`} />
               <Metric label="Red / Yellow / Gray" value={`${scoreboard.redCount || 0} / ${scoreboard.yellowCount || 0} / ${scoreboard.grayCount || 0}`} accent />
+              <Metric label="No contract amount on file" value={scoreboard.noContractAmountOnFileCount || 0} gray />
             </div>
             {scoreboard.arDataAsOf && (
               <p className="muted mb-3">AR data as of {new Date(scoreboard.arDataAsOf).toLocaleString()}</p>
@@ -758,6 +759,7 @@ function MyProjectsTab({ portfolio, projectsData, access, openCard }) {
               </div>
               <div style={{display:"flex", gap:"10px", alignItems:"center"}}>
                 <span className={`badge ${p.severity}`}>{p.severity} health</span>
+                {p.noContractAmountOnFile && <span className="badge gray">No contract amount on file</span>}
                 <button className="secondary" onClick={() => openCard(p.id)}>View Details</button>
               </div>
             </div>
@@ -1770,7 +1772,7 @@ function ProjectCard({ project, projects, onSelect, onSave, canEdit }) {
   const save = async (event) => { event.preventDefault(); setStatus("Saving…"); try { await onSave(project.code, { ...form, etcHours: form.etcHours === "" ? null : Number(form.etcHours || 0) }); setStatus("Saved to PM overlay."); } catch (caught) { setStatus(caught.message); } };
   const field = (label, key, type = "text") => <label><span>{label}</span><input disabled={!canEdit} type={type} value={form[key] ?? ""} onChange={(event) => change(key, event.target.value)} /></label>;
   return <main className="content"><Blueprint><div className="section-heading"><div><h2>Project card</h2><p className="muted">The PM-controlled fields below save to the project’s persistent overlay.</p></div><select value={project.code} onChange={(event) => onSelect(event.target.value)}>{projects.map((item) => <option key={item.code} value={item.code}>{item.code} — {item.name}</option>)}</select></div>
-    <div className="project-title"><div><span className="overline muted">{project.code} · {project.client}</span><h2>{project.name}</h2><p className="muted">{project.pm} · {project.contractValueVisible ? money.format(project.contractValue) : "Contract value not captured"} · {money.format(project.exposure)} exposure</p></div><span className={`badge ${project.priority.toLowerCase()}`}>{project.priority} priority</span></div>
+    <div className="project-title"><div><span className="overline muted">{project.code} · {project.client}</span><h2>{project.name}</h2><p className="muted">{project.pm} · {project.contractValueVisible ? money.format(project.contractValue) : "Contract value not captured"} · {money.format(project.exposure)} exposure</p>{!project.contractValueVisible && <span className="badge gray">No contract amount on file</span>}</div><span className={`badge ${project.priority.toLowerCase()}`}>{project.priority} priority</span></div>
     <div className="evidence-grid bqe-evidence">{[["Actual hours", metricValue(project.actualHours)], ["Budget hours", metricValue(project.budgetHours)], ["Invoiced", metricValue(project.invoicedAmount, money)], ["Paid", metricValue(project.paidAmount, money)], ["BQE source", project.bqeMatched ? "Matched" : "No project match"]].map(([label, value]) => <div key={label}><small className="muted">{label}</small><strong>{value}</strong></div>)}</div>
     {project.reconciliationHours !== null && <div className="table-wrap"><table><thead><tr><th>2026 reconciliation</th><th>Exact project</th><th>Parent + child projects</th></tr></thead><tbody>
       <tr><td>Hours</td><td>{metricValue(project.reconciliationHours)}</td><td>{metricValue(project.reconciliationRolledUpHours)}</td></tr>

@@ -109,6 +109,20 @@ test("activity, WIP, invoice, note, contact, and fee thresholds preserve severit
   assert.equal(evaluateHealth({ ...base, feeRemaining: 4_999 }, rules).severity, "yellow");
 });
 
+test("fee exhausted is unknown when no positive contract amount is on file", () => {
+  const metrics = {
+    ...base,
+    contractAmount: 0,
+    invoicedAmount: 100,
+    percentComplete: 50,
+  };
+  const evaluation = evaluateHealth({ ...metrics, active: true }, [
+    makeRule("fee", "Fee exhausted", "red", { type: "fee_exhausted" }),
+  ]);
+  assert.equal(evaluation.severity, "green");
+  assert.equal(evaluation.results[0]?.result, "unknown");
+});
+
 test("time inactivity is red at 31 days and dual 90-day inactivity is gray only without red", () => {
   assert.equal(evaluateHealth({ ...base, daysSinceLastTime: 31 }, rules).severity, "red");
   const grayOnlyRules = rules.filter((rule) => rule.severity === "gray");

@@ -116,6 +116,7 @@ export type PortfolioProject = {
   client: string;
   pm: string;
   fee: number;
+  noContractAmountOnFile: boolean;
   portfolioAr: number;
   computedSeverity: HealthSeverity;
   severity: HealthSeverity;
@@ -194,6 +195,9 @@ export function evaluateHealth(
     }
     if (condition.activeOnly === true && metrics.active === false) {
       return { id: rule.id, name: rule.name, severity: rule.severity as RuleSeverity, result: "clear" };
+    }
+    if (type === "fee_exhausted" && metrics.contractAmount <= 0) {
+      return { id: rule.id, name: rule.name, severity: rule.severity as RuleSeverity, result: "unknown" };
     }
     if (type === "budget_burn") {
       const independentMin = typeof condition.independentMinExclusive === "number"
@@ -521,6 +525,7 @@ async function loadPortfolioData(force = false): Promise<LoadedData> {
         client: bqeRoot.client ?? "",
         pm: bqeRoot.manager ?? "",
         fee: contractAmount,
+        noContractAmountOnFile: contractAmount <= 0,
         portfolioAr: arTotal,
         computedSeverity: evaluation.severity,
         severity: (snapshot?.overrideSeverity as HealthSeverity | null) ?? evaluation.severity,
