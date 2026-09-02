@@ -126,3 +126,17 @@ mtime_ms = 1788365170093
 storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:ef6decb8-d7da-4a88-b7d8-4fbfebca39f0/a62ce6c2-509b-4263-bd10-d2cfdda5cd82/e2a2df2f-c89f-461d-8162-989ce9902ccf"
 storage_version_token = "1788365186809785"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "G-Acm1d1qRrLhkVanOK1l"
+uri = "file://artifacts/api-server/logs/bqe-test010-delete.log"
+type = "unspecified"
+title = "BQE TEST-010 deletion log"
+description = "Complete untruncated child-to-parent deletion and verification log, including every request, response, and status code."
+logical_id = "1ef3423a-b76e-48aa-806c-65284c9df910"
+content_hash = "sha256:2de33ef92f3adf55fe65f4448ad39c475fc41fabbd84dd56c7042650f382da0b"
+size = 26103
+mtime_ms = 1788366350053
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:ef6decb8-d7da-4a88-b7d8-4fbfebca39f0/1ef3423a-b76e-48aa-806c-65284c9df910/24335754-749d-4deb-aa51-76633ad19803"
+storage_version_token = "1788366361918422"
+content_type = "application/octet-stream"
