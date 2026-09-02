@@ -56,3 +56,17 @@ mtime_ms = 1788355799826
 storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:ef6decb8-d7da-4a88-b7d8-4fbfebca39f0/8b40bbee-649b-4778-88ec-b8768a77132e/8060f6f3-9968-44fd-aa05-20b0f9c00eb4"
 storage_version_token = "1788355816986282"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "cxx6GqrJw0UcspxjVOx6K"
+uri = "file://artifacts/api-server/logs/bqe-test010-orchestrator-remaining.log"
+type = "unspecified"
+title = "TEST-010 remaining orchestrator full log"
+description = "Complete untruncated log for project-rule preflight, resource assignment, five activity assignments, five allocations, all read-backs, and payload/read-back comparison."
+logical_id = "ae1b37b7-0405-4226-9663-cf5b79193bbf"
+content_hash = "sha256:bd18dd03f39b03ccba844087518bd5cfb1360688522b932f97da6e20cf990877"
+size = 46990
+mtime_ms = 1788356347158
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:ef6decb8-d7da-4a88-b7d8-4fbfebca39f0/ae1b37b7-0405-4226-9663-cf5b79193bbf/4aaf30b1-8410-4d93-9fa1-1c7dcf1513ba"
+storage_version_token = "1788356371638900"
+content_type = "application/octet-stream"
